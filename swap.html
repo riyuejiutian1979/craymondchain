@@ -1,0 +1,285 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>RAYC 生态升级兑换中心</title>
+<style>
+  :root {
+    --bg1: #1a0b2e; --bg2: #450d2a;
+    --card-bg: rgba(26, 15, 35, 0.75);
+    --txt: #f8fafc; --muted: #cbd5e1;
+    --accent-pink: #ec4899; --accent-gold: #f59e0b; --accent-purple: #8b5cf6;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; color: var(--txt); font-family: system-ui, -apple-system, sans-serif;
+    background: radial-gradient(circle at top left, var(--bg1) 0%, transparent 50%),
+                radial-gradient(circle at bottom right, var(--bg2) 0%, transparent 50%),
+                #09050f;
+    background-attachment: fixed;
+    display: flex; justify-content: center; align-items: flex-start;
+    min-height: 100vh; padding: 80px 20px 40px;
+    overflow-x: hidden;
+    flex-direction: column;
+  }
+  .main-container { width: 100%; max-width: 480px; margin: 0 auto; display: flex; flex-direction: column; gap: 15px; }
+  .top-nav { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; justify-content: space-between; align-items: center; padding: 15px 20px; }
+  .back-btn { background: rgba(236, 72, 153, 0.15); border: 1px solid var(--accent-pink); color: #fbcfe8; padding: 10px 20px; border-radius: 30px; text-decoration: none; font-size: 14px; font-weight: bold; backdrop-filter: blur(10px); transition: all 0.3s ease; box-shadow: 0 0 15px rgba(236, 72, 153, 0.3); display: flex; align-items: center; gap: 6px; }
+  .back-btn:hover { background: var(--accent-pink); color: #fff; transform: translateY(-2px); }
+  .logo-container { position: absolute; top: 15px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; align-items: center; }
+  .logo-img { width: 80px; height: 80px; border-radius: 50%; object-fit: cover; animation: floatLogo 3s ease-in-out infinite alternate, glowLogo 2s ease-in-out infinite alternate; }
+  @keyframes floatLogo { 0% { transform: translateY(0px); } 100% { transform: translateY(-10px); } }
+  @keyframes glowLogo { 0% { box-shadow: 0 0 10px var(--accent-gold), 0 0 20px var(--accent-pink); } 100% { box-shadow: 0 0 25px var(--accent-gold), 0 0 40px var(--accent-pink); } }
+
+  .card { width: 100%; background: var(--card-bg); border: 1px solid rgba(245, 158, 11, 0.3); border-radius: 28px; padding: 35px 30px; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.7), inset 0 0 20px rgba(236, 72, 153, 0.1); backdrop-filter: blur(20px); position: relative; }
+  h1 { font-size: 22px; text-align: center; margin: 0 0 25px; background: linear-gradient(135deg, #fcd34d, #f472b6); -webkit-background-clip: text; -webkit-text-fill-color: transparent; text-shadow: 0 0 20px rgba(244, 114, 182, 0.4); font-weight: 800; }
+  .wallet-bar { display: flex; justify-content: space-between; align-items: center; background: rgba(0, 0, 0, 0.3); padding: 12px 18px; border-radius: 16px; margin-bottom: 25px; font-size: 13px; border: 1px solid rgba(255, 255, 255, 0.1); }
+  .connect-btn { background: linear-gradient(135deg, var(--accent-pink), var(--accent-purple)); color: #fff; border: none; padding: 8px 18px; border-radius: 10px; cursor: pointer; font-weight: bold; transition: 0.3s; }
+  .connect-btn:hover { filter: brightness(1.2); }
+  .connect-btn.hidden { display: none; }
+
+  .input-box { background: rgba(0, 0, 0, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 20px; padding: 18px; margin-bottom: 16px; transition: 0.3s; }
+  .input-box:focus-within { border-color: var(--accent-gold); box-shadow: 0 0 15px rgba(245, 158, 11, 0.2); }
+  .input-box label { font-size: 13px; color: var(--muted); display: block; margin-bottom: 8px; font-weight: 600; }
+  .input-box input { width: 100%; background: transparent; border: none; color: #fff; font-size: 24px; outline: none; font-weight: 900; letter-spacing: 1px; }
+  .input-box input::placeholder { color: rgba(255, 255, 255, 0.2); }
+  .info-row { display: flex; justify-content: space-between; font-size: 13px; color: var(--muted); margin-bottom: 10px; padding: 0 5px; }
+  .info-row span:last-child { color: var(--txt); font-weight: bold; }
+  .max-btn { color: var(--accent-gold); cursor: pointer; font-weight: bold; transition: 0.2s; }
+  .max-btn:hover { text-shadow: 0 0 10px var(--accent-gold); }
+
+  .action-btn { position: relative; width: 100%; padding: 18px; border: none; border-radius: 20px; background: linear-gradient(135deg, #f59e0b, #ec4899); color: #fff; font-size: 18px; font-weight: 800; letter-spacing: 1px; cursor: pointer; margin-top: 25px; overflow: hidden; transition: 0.3s; box-shadow: 0 10px 20px -5px rgba(236, 72, 153, 0.5); }
+  .action-btn::before { content: ''; position: absolute; top: 0; left: -100%; width: 100%; height: 100%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent); animation: sweep 3s infinite; }
+  @keyframes sweep { 100% { left: 100%; } }
+  .action-btn:hover:not(:disabled) { transform: translateY(-3px); box-shadow: 0 15px 25px -5px rgba(236, 72, 153, 0.7); }
+  .action-btn:disabled { opacity: 0.5; cursor: not-allowed; box-shadow: none; }
+  
+  .toasts { position: fixed; top: 20px; left: 50%; transform: translateX(-50%); display: flex; flex-direction: column; gap: 10px; z-index: 999; }
+  .toast { background: rgba(26, 15, 35, 0.95); padding: 12px 24px; border-radius: 30px; font-size: 14px; border: 1px solid var(--accent-pink); box-shadow: 0 10px 20px rgba(0,0,0,0.5); animation: slidein 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275); font-weight: bold; }
+  @keyframes slidein { from { opacity: 0; transform: translateY(-30px); } to { opacity: 1; transform: none; } }
+</style>
+</head>
+<body>
+
+<div class="top-nav">
+  <a href="index-6.html" class="back-btn">← 返回</a>
+  <div class="logo-container">
+    <img src="https://i.imgs.ovh/2026/10/25/be84b9435a64d9394eb58156d4fadb8f.png" class="logo-img" alt="Logo" />
+  </div>
+</div>
+
+<div class="main-container">
+    <div class="card" style="margin-top: 40px;">
+      <h1>🚀 RAYC 金本位兑换</h1>
+      
+      <div class="wallet-bar">
+        <span id="walletDisplay" style="font-family:monospace;">🦊 未连接</span>
+        <button id="connectBtn" class="connect-btn">连接钱包</button>
+      </div>
+
+      <div class="input-box">
+        <div style="display:flex; justify-content:space-between;">
+          <label>💰 支付：旧 RAYC</label>
+          <label style="color:var(--accent-gold);">余额: <span id="balOld">0</span></label>
+        </div>
+        <input type="number" id="payAmount" placeholder="0" />
+        <div class="info-row" style="margin-top:10px; margin-bottom:0; justify-content:flex-end;">
+          <span class="max-btn" onclick="useMax()">MAX</span>
+        </div>
+      </div>
+
+      <div style="text-align:center; margin:-10px 0; position:relative; z-index:10;">
+        <div style="background:var(--card-bg); border:1px solid rgba(255,255,255,0.1); width:36px; height:36px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; color:var(--accent-gold); font-weight:bold; border: 1px solid var(--accent-gold);">↓</div>
+      </div>
+
+      <div class="input-box" style="opacity:0.8;">
+        <label>🪙 获得：新 RAYC-A</label>
+        <input type="number" id="receiveAmount" placeholder="0" readonly />
+      </div>
+
+      <div class="info-row" style="margin-top:15px;">
+        <span>⚡ 额外扣除 RAYT 手续费</span>
+        <span id="feeRayt" style="color:var(--accent-pink);">--</span>
+      </div>
+      <div class="info-row">
+        <span>💼 你的 RAYT 余额</span>
+        <span id="balRayt">0</span>
+      </div>
+      <div class="info-row" style="margin-bottom: 15px;">
+        <span>📈 当前 RAYC-A 兑换价格</span>
+        <span id="currentRaycAPrice" style="color: #10b981;">-- USDT</span>
+      </div>
+
+      <button class="action-btn" id="actionBtn" disabled>请输入数量</button>
+    </div>
+
+    <div class="card" style="padding: 20px 25px; border-color: rgba(255,255,255,0.1);">
+      <div style="font-size: 13px; color: var(--muted); margin-bottom: 10px; text-align: center;">RAYC-A 合约地址</div>
+      <div style="display: flex; align-items: center; justify-content: space-between; background: rgba(0,0,0,0.4); padding: 12px 15px; border-radius: 16px; border: 1px solid rgba(255,255,255,0.05);">
+        <span id="raycaAddress" style="font-family: monospace; font-size: 12px; color: #fcd34d; word-break: break-all;">0x3479bfA6e0f681A3763961b95759f477DE7Cc9a9</span>
+        <button onclick="copyRaycaAddress()" style="background: linear-gradient(135deg, var(--accent-purple), var(--accent-pink)); border: none; color: white; padding: 8px 14px; border-radius: 10px; cursor: pointer; font-size: 12px; font-weight: bold; margin-left: 10px;">复制</button>
+      </div>
+    </div>
+</div>
+
+<div class="toasts" id="toasts"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<script>
+    // ⚠️ 在这里填入你部署好的 V9 合约地址
+    const CONTRACT_ADDRESS = "0x填入你的V9合约地址"; 
+    const RAYC_OLD = "0x1AAafebB2247616a8f290115df8d63Acaac47d49";
+    const RAYC_A = "0x3479bfA6e0f681A3763961b95759f477DE7Cc9a9";
+    const RAYT = "0x88201e877C4FC38D2C1c3AF20A32234629f02405";
+
+    const SWAP_ABI = [
+        "function swap(uint256 amountRayc)",
+        "function priceRaycA() view returns (uint256)",
+        "function feeRAYTAmount() view returns (uint256)"
+    ];
+    const ERC20_ABI = [
+        "function balanceOf(address) view returns (uint256)",
+        "function allowance(address,address) view returns (uint256)",
+        "function approve(address,uint256) returns (bool)"
+    ];
+
+    let provider, signer, userAddress, swapContract, oldContract, aContract, raytContract;
+    let currentPriceRayca = 0, feeRaytWei = 0;
+    const $ = id => document.getElementById(id);
+
+    function toast(msg, err=false) { 
+      const el = document.createElement("div"); el.className="toast"; el.innerText=msg; 
+      if(err) el.style.borderColor = "#ff5c5c";
+      $("toasts").appendChild(el); setTimeout(()=>el.remove(),3000); 
+    }
+    function copyRaycaAddress() {
+      navigator.clipboard.writeText(RAYC_A).then(() => { toast('✅ 地址已复制！'); });
+    }
+
+    window.addEventListener('DOMContentLoaded', async () => {
+        if (window.ethereum) {
+            provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            if (accounts.length > 0) initWallet(accounts[0]);
+        }
+    });
+
+    $("connectBtn").onclick = async () => {
+        if(!window.ethereum) return alert('请安装 MetaMask 或 TP钱包');
+        try {
+            const accounts = await window.ethereum.request({method:'eth_requestAccounts'});
+            await initWallet(accounts[0]);
+        } catch(e) { alert(e.message); }
+    };
+
+    async function initWallet(address) {
+        if (CONTRACT_ADDRESS.includes("填入")) return alert("前端未配置合约地址！");
+        signer = provider.getSigner();
+        userAddress = address;
+
+        const net = await provider.getNetwork();
+        if(net.chainId !== 56) return alert("请切换到 BSC 主网！");
+
+        $("walletDisplay").innerText = userAddress.slice(0,6)+'...'+userAddress.slice(-4);
+        $("connectBtn").classList.add("hidden");
+
+        swapContract = new ethers.Contract(CONTRACT_ADDRESS, SWAP_ABI, signer);
+        oldContract = new ethers.Contract(RAYC_OLD, ERC20_ABI, signer);
+        aContract = new ethers.Contract(RAYC_A, ERC20_ABI, signer);
+        raytContract = new ethers.Contract(RAYT, ERC20_ABI, signer);
+
+        await loadData();
+    }
+
+    async function loadData() {
+        try {
+            const p = await swapContract.priceRaycA();
+            currentPriceRayca = parseFloat(ethers.utils.formatEther(p));
+            $("currentRaycAPrice").innerText = currentPriceRayca + " USDT";
+
+            const f = await swapContract.feeRAYTAmount();
+            feeRaytWei = f;
+            $("feeRayt").innerText = ethers.utils.formatEther(f) + " RAYT";
+
+            const [balOld, balRayt] = await Promise.all([
+                oldContract.balanceOf(userAddress),
+                raytContract.balanceOf(userAddress)
+            ]);
+
+            $("balOld").innerText = parseFloat(ethers.utils.formatEther(balOld)).toLocaleString();
+            $("balRayt").innerText = parseFloat(ethers.utils.formatEther(balRayt)).toLocaleString();
+
+            $("actionBtn").innerText = '开始兑换';
+            $("actionBtn").disabled = false;
+        } catch(e) {
+            console.error(e);
+            toast("读取合约数据失败", true);
+        }
+    }
+
+    $("payAmount").addEventListener("input", () => {
+        const valStr = $("payAmount").value;
+        const val = parseFloat(valStr);
+        if(isNaN(val) || val <= 0) {
+            $("receiveAmount").value = "";
+            return;
+        }
+        // 前端根据固定 0.01U 和后台设定的价格，给用户展示预计获得的代币数量
+        const totalUSDTValue = val * 0.01;
+        const outVal = totalUSDTValue / currentPriceRayca;
+        $("receiveAmount").value = outVal.toFixed(4);
+    });
+
+    function useMax() {
+        $("payAmount").value = $("balOld").innerText.replace(/,/g, '');
+        $("payAmount").dispatchEvent(new Event('input'));
+    }
+
+    $("actionBtn").onclick = async () => {
+        const amtStr = $("payAmount").value;
+        if(!amtStr || parseFloat(amtStr) <= 0) return toast("请输入数量", true);
+        const amtWei = ethers.utils.parseEther(amtStr);
+
+        const btn = $("actionBtn");
+        btn.disabled = true; btn.innerText = "检查授权中...";
+
+        try {
+            // 1. 授权旧 RAYC
+            const alOld = await oldContract.allowance(userAddress, CONTRACT_ADDRESS);
+            if(alOld.lt(amtWei)) {
+                btn.innerText = "授权 RAYC...";
+                await (await oldContract.approve(CONTRACT_ADDRESS, ethers.constants.MaxUint256)).wait();
+            }
+
+            // 2. 授权 RAYT
+            if(feeRaytWei.gt(0)) {
+                const alRayt = await raytContract.allowance(userAddress, CONTRACT_ADDRESS);
+                if(alRayt.lt(feeRaytWei)) {
+                    btn.innerText = "授权 RAYT...";
+                    await (await raytContract.approve(CONTRACT_ADDRESS, ethers.constants.MaxUint256)).wait();
+                }
+            }
+
+            btn.innerText = "正在兑换...";
+            const tx = await swapContract.swap(amtWei);
+            await tx.wait();
+            
+            toast('🎉 兑换成功！');
+            $("payAmount").value = ""; $("receiveAmount").value = "";
+            await loadData();
+        } catch(e) {
+            console.error(e);
+            // 拦截合约里的报错
+            if(e.message && (e.message.includes("Not eligible") || (e.reason && e.reason.includes("Not eligible")))) {
+                toast('❌ 兑换失败：仅限参与托管的 VIP 客户！', true);
+            } else {
+                toast(e.reason || "兑换失败", true);
+            }
+        } finally {
+            btn.innerText = "开始兑换"; btn.disabled = false;
+        }
+    };
+</script>
+</body>
+</html>

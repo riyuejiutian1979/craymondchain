@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>RAYT 挖矿专属管理后台</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#0a0f1e;color:#eef;padding:20px}
+.container{max-width:1400px;margin:0 auto}
+h1{margin-bottom:20px;border-left:4px solid #2a6df4;padding-left:16px}
+.card{background:#141b2b;border-radius:20px;padding:20px;margin-bottom:20px;border:1px solid #2a3a5a}
+.card h2{color:#7aa9ff;margin-bottom:14px;font-size:17px;border-bottom:1px solid #2a3a5a;padding-bottom:10px;}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:20px}
+input,select,textarea{background:#0f1622;border:1px solid #2a3a5a;color:#eef;padding:10px;border-radius:12px;width:100%;margin:6px 0;font-family:inherit}
+button{background:#2a6df4;border:none;color:#fff;padding:10px 20px;border-radius:30px;cursor:pointer;margin-top:8px;font-size:14px;width:100%;transition:0.2s;}
+button:hover{filter:brightness(1.1)}
+button.red{background:#8b3c3c}
+button.green{background:#10b981}
+button.orange{background:#f59e0b}
+button.purple{background:linear-gradient(95deg,#8b5cf6,#6d28d9)}
+button.small{padding:6px 14px;font-size:12px;margin-top:4px;width:auto;}
+.log{background:#0f1622;border-radius:14px;padding:10px;font-family:monospace;font-size:12px;max-height:250px;overflow-y:auto;margin-top:12px;border:1px solid #2a3a5a}
+.row{display:flex;justify-content:space-between;background:#0f1622;padding:10px 14px;border-radius:12px;margin:6px 0;font-size:13px}
+.warning{color:#ffaa66;font-size:12px;margin-top:4px}
+.tabs{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap}
+.tab{padding:10px 24px;border-radius:30px;cursor:pointer;font-size:14px;font-weight:600;background:rgba(0,0,0,.4);border:1px solid #2a3a5a;color:#cbd5ff}
+.tab.active{background:linear-gradient(135deg,#1f3a8a,#2b4eb5);color:#fff;border-color:transparent}
+.panel{display:none}.panel.active{display:block}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px;}
+th{background:#0f1622;padding:10px;text-align:left;color:#7aa9ff;position:sticky;top:0;}
+td{padding:10px;border-bottom:1px solid #1f2a40;}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>⛏️ RAYT 挖矿专属管理后台</h1>
+
+  <div class="card">
+    <button id="connectBtn" style="max-width:300px;">连接 Owner 钱包</button>
+    <div id="walletStatus" style="margin-top:10px;font-family:monospace">未连接</div>
+    <div id="authStatus" style="margin-top:8px;color:#ef4444;font-weight:bold;"></div>
+  </div>
+
+  <div id="adminPanel" style="display:none">
+    <div class="tabs">
+      <div class="tab active" data-tab="overview">📊 挖矿概览</div>
+      <div class="tab" data-tab="machines">⚙️ 矿机类型管理</div>
+      <div class="tab" data-tab="pool">💵 资金池与提取</div>
+      <div class="tab" data-tab="rates">📈 伞下级差配置</div>
+      <div class="tab" data-tab="bindings">🔗 合约绑定状态</div>
+      <div class="tab" data-tab="blacklist">🚫 黑名单控制</div>
+      <div class="tab" data-tab="query">🔍 用户查询与关系</div>
+    </div>
+
+    <!-- 概览 -->
+    <div class="panel active" id="tab-overview">
+      <div class="card">
+        <h2>📌 合约概览</h2>
+        <div class="row"><span>RAYT 池余额</span><span id="ovRayt" style="color:#10b981;font-weight:bold;">-</span></div>
+        <div class="row"><span>RAYC 空投池余额</span><span id="ovRayc" style="color:#10b981;font-weight:bold;">-</span></div>
+        <div class="row"><span>USDT 池余额 (含锁定奖励)</span><span id="ovUsdt" style="color:#10b981;font-weight:bold;">-</span></div>
+        <div class="row"><span>待发放 RAYT 奖励</span><span id="ovPendingRayt">-</span></div>
+        <div class="row"><span>待发放 USDT 奖励</span><span id="ovPendingUsdt">-</span></div>
+        <button class="green" onclick="refreshOverview()">🔄 刷新概览</button>
+      </div>
+
+      <div class="card" style="margin-top:20px;">
+        <h2>📈 矿机销售实时统计 (真实数据)</h2>
+        <div id="salesStats" style="font-size:13px;line-height:1.8;">加载中...</div>
+        <button class="green" onclick="loadSalesStats()" style="margin-top:10px;">🔄 刷新销售数据</button>
+      </div>
+    </div>
+
+    <!-- 矿机管理 -->
+    <div class="panel" id="tab-machines">
+      <div class="grid">
+        <div class="card">
+          <h2>➕ 添加新矿机类型</h2>
+          <label>价格 (USDT)</label>
+          <input type="number" id="mPrice" value="10">
+          <label>每日产出 (RAYT)</label>
+          <input type="number" id="mOutput" value="50">
+          <label>挖矿天数</label>
+          <input type="number" id="mDays" value="200">
+          <label>空投 RAYC 数量</label>
+          <input type="number" id="mAirdrop" value="0.001">
+          <label>单地址限领</label>
+          <input type="number" id="mMaxPerUser" value="1" disabled>
+          <label>全网总量</label>
+          <input type="number" id="mTotalMax" value="750000">
+          <button class="green" onclick="addMachineType()">✅ 添加矿机</button>
+        </div>
+        <div class="card">
+          <h2>📋 已有矿机列表</h2>
+          <div id="machineList" style="font-size:13px;line-height:1.8;">加载中...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 资金池 -->
+    <div class="panel" id="tab-pool">
+      <div class="grid">
+        <div class="card">
+          <h2>💵 注入资金</h2>
+          <label>注入 RAYT 奖励池</label>
+          <div class="row" style="padding:0;background:transparent;">
+            <input type="number" id="depRayt" value="100000" style="margin:0;flex:1;">
+            <button class="green small" style="margin-left:10px;" onclick="depositRayt()">注入</button>
+          </div>
+          <label style="margin-top:15px;">注入 RAYC 空投池</label>
+          <div class="row" style="padding:0;background:transparent;">
+            <input type="number" id="depRayc" value="1000" style="margin:0;flex:1;">
+            <button class="green small" style="margin-left:10px;" onclick="depositRayc()">注入</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>💸 提取多余资金</h2>
+          <div class="warning">只能提取未被用户锁定的待领奖池余额。</div>
+          <label>提取多余 RAYT</label>
+          <div class="row" style="padding:0;background:transparent;">
+            <input type="number" id="wdRayt" placeholder="数量" style="margin:0;flex:1;">
+            <button class="red small" style="margin-left:10px;" onclick="withdrawRayt()">提取</button>
+          </div>
+          <label style="margin-top:15px;">提取多余 USDT</label>
+          <div class="row" style="padding:0;background:transparent;">
+            <input type="number" id="wdUsdt" placeholder="数量" style="margin:0;flex:1;">
+            <button class="red small" style="margin-left:10px;" onclick="withdrawUsdt()">提取</button>
+          </div>
+          <label style="margin-top:15px;">提取多余 RAYC</label>
+          <div class="row" style="padding:0;background:transparent;">
+            <input type="number" id="wdRayc" placeholder="数量" style="margin:0;flex:1;">
+            <button class="red small" style="margin-left:10px;" onclick="withdrawRayc()">提取</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 级差配置 -->
+    <div class="panel" id="tab-rates">
+      <div class="card">
+        <h2>📈 伞下级差配置 (基点)</h2>
+        <div class="grid">
+          <div>
+            <label>普通 VIP 产量奖励 (2000 = 20%)</label>
+            <input type="number" id="vipOut" value="2000">
+            <label>普通 VIP 矿机费奖励</label>
+            <input type="number" id="vipMac" value="2000">
+          </div>
+          <div>
+            <label>W1 工作室 产量奖励 (3000 = 30%)</label>
+            <input type="number" id="w1Out" value="3000">
+            <label>W1 工作室 矿机费奖励</label>
+            <input type="number" id="w1Mac" value="3000">
+          </div>
+          <div>
+            <label>W2 工作室 产量奖励 (4000 = 40%)</label>
+            <input type="number" id="w2Out" value="4000">
+            <label>W2 工作室 矿机费奖励</label>
+            <input type="number" id="w2Mac" value="4000">
+          </div>
+        </div>
+        <button class="green" onclick="setRates()" style="margin-top:20px;">保存并同步</button>
+      </div>
+    </div>
+
+    <!-- 合约绑定状态 -->
+    <div class="panel" id="tab-bindings">
+      <div class="card">
+        <h2>🔗 挖矿合约关键绑定状态</h2>
+        <div class="warning">如果这里有 ❌，请去"全局合约配置与授权中心后台"执行步骤 3（挖矿关联配置）。</div>
+        <div class="row"><span>workshopNode (工作室查询)</span><span id="bindWorkshop">-</span></div>
+        <div class="row"><span>vipChecker (VIP 校验)</span><span id="bindVip">-</span></div>
+        <div class="row"><span>referralRegistry (推荐关系)</span><span id="bindReferral">-</span></div>
+        <button class="green" onclick="checkBindings()">🔄 刷新绑定状态</button>
+      </div>
+    </div>
+
+    <!-- 黑名单 -->
+    <div class="panel" id="tab-blacklist">
+      <div class="grid">
+        <div class="card">
+          <h2>⚙️ 黑名单总开关</h2>
+          <div class="row"><span>当前状态</span><span id="blStatus">-</span></div>
+          <div style="display:flex;gap:10px;margin-top:10px;">
+            <button class="green" onclick="setBlEnabled(true)">✅ 开启拦截</button>
+            <button class="red" onclick="setBlEnabled(false)">❌ 关闭拦截</button>
+          </div>
+        </div>
+        <div class="card">
+          <h2>🎯 拉黑操作</h2>
+          <input type="text" id="blAddr" placeholder="钱包地址 0x...">
+          <div style="display:flex;gap:10px;">
+            <button class="red" onclick="setSingleBl(true)">🚫 拉黑</button>
+            <button class="orange" onclick="setSingleBl(false)">✅ 解除</button>
+          </div>
+          <hr style="border-color:#2a3a5a;margin:12px 0">
+          <textarea id="batchBlAddr" rows="3" placeholder="批量拉黑，每行一个地址"></textarea>
+          <button class="red" onclick="setBatchBl()">批量拉黑</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 用户查询 -->
+    <div class="panel" id="tab-query">
+      <div class="card">
+        <h2>🔍 用户矿机与奖励查询</h2>
+        <input type="text" id="queryAddr" placeholder="用户钱包地址 0x...">
+        <button class="green" onclick="queryUser()">查询</button>
+        <div id="queryResult" style="margin-top:15px;font-size:13px;line-height:1.8;background:#0f1622;padding:12px;border-radius:8px;"></div>
+      </div>
+
+      <!-- 👇 新增：后台直接补绑无上级用户 👇 -->
+      <div class="card" style="margin-top:20px; border-color:#f59e0b; border-width:2px;">
+        <h2>🔗 强制补绑推荐人 (无上级用户专享)</h2>
+        <div class="warning">
+          用于给已购买矿机但<b>未绑定推荐人</b>的用户，通过底层推荐合约直接补绑上级。<br>
+          <span style="color:#10b981;">如果该用户已经绑定了上级，这里调用将会失败（被推荐合约拦截）。</span>
+        </div>
+        <div style="display:flex; gap:10px; margin-top:10px;">
+            <div style="flex:1;">
+                <label>用户地址 (下级)</label>
+                <input type="text" id="bindUserAddr" placeholder="0x...">
+            </div>
+            <div style="flex:1;">
+                <label>推荐人地址 (上级)</label>
+                <input type="text" id="bindReferrerAddr" placeholder="0x...">
+            </div>
+        </div>
+        <button class="orange" onclick="forceBindReferrer()" style="margin-top:10px;">⚡ 确认补绑</button>
+      </div>
+
+      <!-- 扫描指定地址伞下购买矿机的人数 -->
+      <div class="card" style="margin-top:20px; border-color:#8b5cf6; border-width:2px;">
+        <h2>🌳 扫描某地址伞下所有购买矿机的人数</h2>
+        <div class="warning">输入一个起始地址，系统会递归查询其所有下级，并统计有哪些人实际购买了矿机（会显示具体的矿机ID）。</div>
+        <input type="text" id="scanMiningRootAddr" placeholder="输入起始地址 0x..." style="margin-bottom:10px;">
+        <button class="purple" onclick="scanMiningTree()" id="scanMiningBtn">🔍 开始扫描伞下矿机购买情况</button>
+        <div id="scanMiningProgress" style="margin-top:10px; color:#f59e0b; font-size:13px;"></div>
+        
+        <div style="overflow-x:auto; margin-top:15px; max-height:500px;">
+            <table id="scanMiningTable" style="display:none;">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>下级地址</th>
+                        <th>购买矿机情况</th>
+                    </tr>
+                </thead>
+                <tbody></tbody>
+            </table>
+        </div>
+      </div>
+
+      <!-- 一键扫描所有挖矿地址 -->
+      <div class="card" style="margin-top:20px;">
+        <h2>📥 一键扫描所有购买过矿机的地址</h2>
+        <div class="warning">注意：因BSC节点限制，跨度太大可能扫描缓慢或超时。请尽量去BscScan查一下合约部署的区块号填入，不填默认扫描最近10000个区块。</div>
+        <div style="display:flex;gap:10px;margin-top:10px;">
+          <input type="number" id="scanStartBlock" placeholder="起始区块（选填）" style="flex:1;">
+          <button class="green" id="scanUsersBtn" style="width:200px;margin-top:0;" onclick="scanAllUsers()">扫描所有地址</button>
+        </div>
+        <div id="scanProgress" style="font-size:12px;color:#f59e0b;margin-top:10px;"></div>
+        <div id="scanResult" style="margin-top:15px;background:#0f1622;padding:12px;border-radius:8px;max-height:300px;overflow-y:auto;font-family:monospace;font-size:12px;"></div>
+      </div>
+    </div>
+
+  </div>
+  <div class="log" id="log">📋 操作日志</div>
+</div>
+
+<script>
+// ⚡ 全部换成新部署地址
+const ADDR = {
+    mining: "0x8B58dFa04cb6fA855263a6B60AA939D6e38eEcA9",
+    usdt:   "0x55d398326f99059fF775485246999027B3197955",
+    rayt:   "0x88201e877C4FC38D2C1c3AF20A32234629f02405",
+    rayc:   "0x1AAafebB2247616a8f290115df8d63Acaac47d49",
+    referral: "0x2EA13E42C0e05678D50d010Ca2D390742626EA9e" // 补充推荐合约地址
+};
+// ⚡ 部署钱包改为新地址
+const SUPER_ADMIN = "0x1a01B7C72bc0C7021a54e9E4027994D8AB6f5998";
+
+const ABI = {
+    erc20: ["function approve(address,uint256)","function allowance(address,address) view returns (uint256)","function balanceOf(address) view returns(uint256)"],
+    referral: [
+        "function getDirectReferrals(address user) view returns (address[])",
+        // 加入 bindReferrer 方法，允许在后台直接调用推荐合约强制绑定
+        "function bindReferrer(address user, address uplink) external" 
+    ],
+    mining: [
+        "function getMachineType(uint256) view returns (tuple(uint256 price, uint256 dailyOutput, uint256 miningDays, uint256 airdropRayc, uint256 maxPerUser, uint256 totalMax, uint256 totalSold, bool enabled))",
+        "function machineTypeCount() view returns (uint256)",
+        "function addMachineType(tuple(uint256 price, uint256 dailyOutput, uint256 miningDays, uint256 airdropRayc, uint256 maxPerUser, uint256 totalMax, uint256 totalSold, bool enabled))",
+        "function setMachineTypeEnabled(uint256, bool)",
+        "function setReferralRates(uint256, uint256, uint256, uint256, uint256, uint256)",
+        "function vipOutputBps() view returns(uint256)", "function vipMachineBps() view returns(uint256)",
+        "function w1OutputBps() view returns(uint256)", "function w1MachineBps() view returns(uint256)",
+        "function w2OutputBps() view returns(uint256)", "function w2MachineBps() view returns(uint256)",
+        "function depositRaytPool(uint256)", "function depositRaycAirdropPool(uint256)",
+        "function withdrawExtraRAYT(address,uint256)", "function withdrawExtraUSDT(address,uint256)", "function withdrawExtraRAYC(address,uint256)",
+        "function totalPendingRaytReward() view returns(uint256)", "function totalPendingUsdtReward() view returns(uint256)",
+        "function blacklistEnabled() view returns(bool)", "function setBlacklistEnabled(bool)",
+        "function blacklist(address) view returns(bool)", "function setBlacklist(address,bool)", "function setBlacklistBatch(address[],bool)",
+        "function hasMachineOfType(address,uint256) view returns(bool)",
+        "function userMachines(address,uint256) view returns(tuple(uint256 typeId, uint256 startTime, uint256 lastClaimDay, uint256 claimedDays, uint256 totalClaimedRAYT, bool active))",
+        "function pendingReferralReward(address) view returns(uint256,uint256)",
+        "function pendingReward(address,uint256) view returns(uint256)",
+        "function workshopNode() view returns(address)",
+        "function vipChecker() view returns(address)",
+        "function referralRegistry() view returns(address)",
+        "event MachinePurchased(address indexed user, uint256 indexed typeId, uint256 price, address referrer)"
+    ]
+};
+
+let provider, signer, userAddress, C = {};
+let R = {}; // 推荐合约只读实例
+const logEl = document.getElementById('log');
+function log(m, e=false){ logEl.innerHTML += `<div style="color:${e?'#ef4444':'#10b981'}">[${new Date().toLocaleTimeString()}] ${m}</div>`; logEl.scrollTop = logEl.scrollHeight; }
+function fmt(v) { try { return parseFloat(ethers.utils.formatEther(v)).toFixed(4); } catch(e){ return "0"; } }
+
+document.querySelectorAll('.tab').forEach(t => { t.onclick = () => { document.querySelectorAll('.tab').forEach(x => x.classList.remove('active')); document.querySelectorAll('.panel').forEach(x => x.classList.remove('active')); t.classList.add('active'); document.getElementById('tab-'+t.dataset.tab).classList.add('active'); }; });
+
+document.getElementById('connectBtn').onclick = async () => {
+    if(!window.ethereum) return alert('请安装钱包');
+    await window.ethereum.request({ method: 'eth_requestAccounts' });
+    provider = new ethers.providers.Web3Provider(window.ethereum, "any"); 
+    signer = provider.getSigner(); 
+    userAddress = await signer.getAddress();
+    
+    const net = await provider.getNetwork();
+    if(net.chainId !== 56) return alert('请切换到 BSC 主网');
+
+    if(userAddress.toLowerCase() !== SUPER_ADMIN.toLowerCase()) {
+        document.getElementById('walletStatus').innerText = '当前连接: ' + userAddress;
+        document.getElementById('authStatus').innerText = '⛔ 拒绝访问：非超级管理员！';
+        document.getElementById('adminPanel').style.display = 'none';
+        return;
+    }
+
+    document.getElementById('walletStatus').innerText = '已连接(管理员): ' + userAddress;
+    document.getElementById('authStatus').innerText = '✅ 权限校验通过';
+    document.getElementById('authStatus').style.color = '#10b981';
+    document.getElementById('adminPanel').style.display = 'block';
+    
+    C = {
+        usdt: new ethers.Contract(ADDR.usdt, ABI.erc20, signer),
+        rayt: new ethers.Contract(ADDR.rayt, ABI.erc20, signer),
+        rayc: new ethers.Contract(ADDR.rayc, ABI.erc20, signer),
+        mining: new ethers.Contract(ADDR.mining, ABI.mining, signer),
+        referral: new ethers.Contract(ADDR.referral, ABI.referral, signer) // 加上 signer 实例
+    };
+    
+    R = new ethers.Contract(ADDR.referral, ABI.referral, provider);
+    
+    document.getElementById('scanMiningRootAddr').value = userAddress;
+
+    log('钱包已连接');
+    refreshOverview();
+    loadSalesStats();
+    loadMachineTypes();
+    loadRates();
+    loadBlStatus();
+    checkBindings();
+};
+
+async function tx(promise, msg) { 
+    try { log('等待交易...'); const res = await promise; await res.wait(); log('✅ ' + msg); refreshOverview(); loadSalesStats(); loadMachineTypes(); loadBlStatus(); checkBindings(); } 
+    catch(e) { log('❌ 失败: ' + (e.reason || e.message), true); } 
+}
+
+// 概览
+async function refreshOverview() {
+    try {
+        document.getElementById('ovRayt').innerText = fmt(await C.rayt.balanceOf(ADDR.mining)) + ' RAYT';
+        document.getElementById('ovRayc').innerText = fmt(await C.rayc.balanceOf(ADDR.mining)) + ' RAYC';
+        document.getElementById('ovUsdt').innerText = fmt(await C.usdt.balanceOf(ADDR.mining)) + ' USDT';
+        document.getElementById('ovPendingRayt').innerText = fmt(await C.mining.totalPendingRaytReward()) + ' RAYT';
+        document.getElementById('ovPendingUsdt').innerText = fmt(await C.mining.totalPendingUsdtReward()) + ' USDT';
+    } catch(e){ log('概览加载失败: ' + e.message, true); }
+}
+
+async function loadSalesStats() {
+    try {
+        const statsEl = document.getElementById('salesStats');
+        if(!statsEl) return;
+        const count = (await C.mining.machineTypeCount()).toNumber();
+        let html = '';
+        let totalMachinesSold = 0;
+        let totalSalesValue = 0;
+
+        for(let i=0; i<count; i++){
+            const mt = await C.mining.getMachineType(i);
+            const sold = Number(mt.totalSold);
+            const price = parseFloat(ethers.utils.formatEther(mt.price));
+            const max = Number(mt.totalMax);
+            
+            totalMachinesSold += sold;
+            const salesValue = sold * price;
+            totalSalesValue += salesValue;
+
+            if(sold > 0 || max > 0) {
+                html += `<div class="row">
+                    <span><b>矿机 #${i}</b> (单价: ${price} U)</span>
+                    <span>已售: <b style="color:#10b981">${sold}</b> / ${max} | 累计销售额: <b style="color:#f59e0b">${salesValue.toFixed(2)} USDT</b></span>
+                </div>`;
+            }
+        }
+
+        if(!html) {
+            html = '<div class="warning">暂无矿机销售数据</div>';
+        } else {
+            html = `<div class="row" style="background:rgba(79,172,254,0.1); border:1px solid #2a6df4;">
+                <span><b>📊 全数据汇总</b></span>
+                <span>总售出: <b style="color:#10b981;font-size:16px;">${totalMachinesSold}</b> 台 &nbsp;|&nbsp; 总销售额: <b style="color:#f59e0b;font-size:16px;">${totalSalesValue.toFixed(2)} USDT</b></span>
+            </div>` + html;
+        }
+        statsEl.innerHTML = html;
+    } catch(e) {
+        document.getElementById('salesStats').innerHTML = `<span style="color:#ef4444">加载销售数据失败: ${e.message}</span>`;
+    }
+}
+
+async function loadMachineTypes() {
+    try {
+        const count = (await C.mining.machineTypeCount()).toNumber();
+        let html = '';
+        for(let i=0; i<count; i++){
+            const mt = await C.mining.getMachineType(i);
+            html += `<div class="row">
+                <span><b>ID:${i}</b> ${fmt(mt.price)}U | 日产${fmt(mt.dailyOutput)} | 限${mt.totalSold}/${mt.totalMax}</span>
+                <button class="${mt.enabled?'red':'green'} small" onclick="toggleMachine(${i}, ${!mt.enabled})">${mt.enabled?'下架':'上架'}</button>
+            </div>`;
+        }
+        document.getElementById('machineList').innerHTML = html || '暂无矿机';
+    } catch(e){}
+}
+async function addMachineType() {
+    const mt = {
+        price: ethers.utils.parseEther(document.getElementById('mPrice').value),
+        dailyOutput: ethers.utils.parseEther(document.getElementById('mOutput').value),
+        miningDays: parseInt(document.getElementById('mDays').value),
+        airdropRayc: ethers.utils.parseEther(document.getElementById('mAirdrop').value),
+        maxPerUser: 1,
+        totalMax: parseInt(document.getElementById('mTotalMax').value),
+        totalSold: 0,
+        enabled: true
+    };
+    await tx(C.mining.addMachineType(mt), '矿机添加成功');
+}
+async function toggleMachine(id, status) {
+    await tx(C.mining.setMachineTypeEnabled(id, status), `矿机 ${status?'上架':'下架'}成功`);
+}
+
+async function loadRates() {
+    try {
+        document.getElementById('vipOut').value = (await C.mining.vipOutputBps()).toString();
+        document.getElementById('vipMac').value = (await C.mining.vipMachineBps()).toString();
+        document.getElementById('w1Out').value = (await C.mining.w1OutputBps()).toString();
+        document.getElementById('w1Mac').value = (await C.mining.w1MachineBps()).toString();
+        document.getElementById('w2Out').value = (await C.mining.w2OutputBps()).toString();
+        document.getElementById('w2Mac').value = (await C.mining.w2MachineBps()).toString();
+    } catch(e){}
+}
+async function setRates() {
+    await tx(C.mining.setReferralRates(
+        document.getElementById('vipOut').value, document.getElementById('vipMac').value,
+        document.getElementById('w1Out').value, document.getElementById('w1Mac').value,
+        document.getElementById('w2Out').value, document.getElementById('w2Mac').value
+    ), '级差更新成功');
+}
+
+async function checkBindings() {
+    try {
+        const wAddr = await C.mining.workshopNode();
+        const vAddr = await C.mining.vipChecker();
+        const rAddr = await C.mining.referralRegistry();
+        
+        const expectedWorkshop = "0xff625a83ed6a527061020954E00F8c52Ee9BC1BD";
+        const expectedCustody = "0xaB7920588bCB195C9F714FDbaBe31D039c52DF43";
+        const expectedReferral = "0x2EA13E42C0e05678D50d010Ca2D390742626EA9e";
+        
+        const fmtBind = (addr, expected) => {
+            const ok = addr.toLowerCase() === expected.toLowerCase();
+            return `<span style="color:${ok?'#10b981':'#ef4444'}">${ok?'✅':'❌'} <code style="font-size:11px">${addr}</code></span>`;
+        };
+        
+        document.getElementById('bindWorkshop').innerHTML = fmtBind(wAddr, expectedWorkshop);
+        document.getElementById('bindVip').innerHTML = fmtBind(vAddr, expectedCustody);
+        document.getElementById('bindReferral').innerHTML = fmtBind(rAddr, expectedReferral);
+    } catch(e) {
+        log('读取绑定状态失败: ' + e.message, true);
+    }
+}
+
+async function depositRayt() {
+    const amt = ethers.utils.parseEther(document.getElementById('depRayt').value);
+    if((await C.rayt.allowance(userAddress, ADDR.mining)).lt(amt)) await (await C.rayt.approve(ADDR.mining, ethers.constants.MaxUint256)).wait();
+    await tx(C.mining.depositRaytPool(amt), 'RAYT注入成功');
+}
+async function depositRayc() {
+    const amt = ethers.utils.parseEther(document.getElementById('depRayc').value);
+    if((await C.rayc.allowance(userAddress, ADDR.mining)).lt(amt)) await (await C.rayc.approve(ADDR.mining, ethers.constants.MaxUint256)).wait();
+    await tx(C.mining.depositRaycAirdropPool(amt), 'RAYC注入成功');
+}
+async function withdrawRayt() {
+    const amt = ethers.utils.parseEther(document.getElementById('wdRayt').value);
+    await tx(C.mining.withdrawExtraRAYT(userAddress, amt), 'RAYT提取成功');
+}
+async function withdrawUsdt() {
+    const amt = ethers.utils.parseEther(document.getElementById('wdUsdt').value);
+    await tx(C.mining.withdrawExtraUSDT(userAddress, amt), 'USDT提取成功');
+}
+async function withdrawRayc() {
+    const amt = ethers.utils.parseEther(document.getElementById('wdRayc').value);
+    await tx(C.mining.withdrawExtraRAYC(userAddress, amt), 'RAYC提取成功');
+}
+
+async function loadBlStatus() {
+    const en = await C.mining.blacklistEnabled();
+    document.getElementById('blStatus').innerHTML = en ? '<span style="color:#ef4444;">✅ 已开启</span>' : '<span style="color:#10b981;">❌ 已关闭</span>';
+}
+async function setBlEnabled(st) { await tx(C.mining.setBlacklistEnabled(st), `黑名单已${st?'开启':'关闭'}`); }
+async function setSingleBl(st) {
+    const addr = document.getElementById('blAddr').value;
+    await tx(C.mining.setBlacklist(addr, st), '操作成功');
+}
+async function setBatchBl() {
+    const lines = document.getElementById('batchBlAddr').value.split('\n').map(s=>s.trim()).filter(s=>ethers.utils.isAddress(s));
+    if(!lines.length) return alert('无有效地址');
+    await tx(C.mining.setBlacklistBatch(lines, true), `批量拉黑 ${lines.length} 个`);
+}
+
+async function queryUser() {
+    const addr = document.getElementById('queryAddr').value.trim();
+    if(!ethers.utils.isAddress(addr)) return alert('地址错误');
+    try {
+        const has = await C.mining.hasMachineOfType(addr, 0);
+        let html = `<div>是否购买矿机: ${has ? '✅ 是' : '❌ 否'}</div>`;
+        if(has){
+            const m = await C.mining.userMachines(addr, 0);
+            const pend = await C.mining.pendingReward(addr, 0);
+            html += `<div>开始时间: ${new Date(m.startTime.toNumber()*1000).toLocaleString()}</div>`;
+            html += `<div>已挖天数: ${m.claimedDays} 天</div>`;
+            html += `<div>今日待领: <b style="color:#10b981">${fmt(pend)} RAYT</b></div>`;
+        }
+        const ref = await C.mining.pendingReferralReward(addr);
+        html += `<hr style="border-color:#2a3a5a;margin:8px 0">`;
+        html += `<div>待领伞下 RAYT: <b>${fmt(ref[0])}</b></div>`;
+        html += `<div>待领伞下 USDT: <b>${fmt(ref[1])}</b></div>`;
+        document.getElementById('queryResult').innerHTML = html;
+    } catch(e){ document.getElementById('queryResult').innerText = '查询失败: ' + e.message; }
+}
+
+// 👇 新增：强制补绑推荐人 (直接调用底层推荐合约) 👇
+async function forceBindReferrer() {
+    const userAddr = document.getElementById('bindUserAddr').value.trim();
+    const refAddr = document.getElementById('bindReferrerAddr').value.trim();
+    
+    if(!ethers.utils.isAddress(userAddr) || !ethers.utils.isAddress(refAddr)) {
+        return alert('请输入正确的钱包地址');
+    }
+    if(userAddr.toLowerCase() === refAddr.toLowerCase()) {
+        return alert('用户地址和推荐人地址不能相同！');
+    }
+
+    if(confirm(`⚠️ 确定将用户:\n${userAddr}\n\n强制绑定到推荐人:\n${refAddr}\n\n名下吗？\n(这会给该用户补上漏掉的推荐关系)`)) {
+        // 这里直接调用推荐合约的 bindReferrer 方法
+        await tx(C.referral.bindReferrer(userAddr, refAddr), '推荐关系补绑成功');
+    }
+}
+
+async function scanMiningTree() {
+    const rootAddr = document.getElementById('scanMiningRootAddr').value.trim();
+    if(!ethers.utils.isAddress(rootAddr)) return alert('请输入正确的起始地址');
+
+    const btn = document.getElementById('scanMiningBtn');
+    const progressEl = document.getElementById('scanMiningProgress');
+    const tbody = document.querySelector('#scanMiningTable tbody');
+    const table = document.getElementById('scanMiningTable');
+
+    btn.disabled = true;
+    btn.innerText = '⏳ 正在树状扫描中，请勿关闭...';
+    progressEl.innerText = '正在获取合约数据...';
+    table.style.display = 'table';
+    tbody.innerHTML = '';
+
+    try {
+        const typeCount = (await C.mining.machineTypeCount()).toNumber();
+        let queue = [rootAddr.toLowerCase()];
+        let visited = new Set([rootAddr.toLowerCase()]);
+        let resultRows = [];
+        let gen = 0;
+
+        while(queue.length > 0 && gen < 20) {
+            const nextQueue = [];
+            gen++;
+            progressEl.innerText = `正在扫描第 ${gen} 代成员... 当前已发现 ${visited.size - 1} 个下级`;
+
+            for(let i=0; i<queue.length; i+=10) {
+                const batch = queue.slice(i, i+10);
+                const promises = batch.map(async (addr) => {
+                    try {
+                        const directs = await R.getDirectReferrals(addr);
+                        for(const d of directs) {
+                            const lowerD = d.toLowerCase();
+                            if(!visited.has(lowerD)) {
+                                visited.add(lowerD);
+                                nextQueue.push(lowerD);
+                            }
+                        }
+
+                        if(addr !== rootAddr.toLowerCase()) {
+                            let boughtMachines = [];
+                            for(let t=0; t<typeCount; t++) {
+                                const has = await C.mining.hasMachineOfType(addr, t);
+                                if(has) boughtMachines.push(t);
+                            }
+                            
+                            if(boughtMachines.length > 0) {
+                                resultRows.push({ address: addr, machines: boughtMachines });
+                                let html = '';
+                                resultRows.forEach((r, idx) => {
+                                    html += `<tr>
+                                        <td>${idx+1}</td>
+                                        <td style="font-family:monospace;">${r.address}</td>
+                                        <td><span style="color:#10b981;font-weight:bold;">已购矿机 ID: ${r.machines.join(', ')}</span></td>
+                                    </tr>`;
+                                });
+                                tbody.innerHTML = html;
+                            }
+                        }
+                    } catch(e) {}
+                });
+                
+                await Promise.all(promises);
+                await new Promise(r => setTimeout(r, 100));
+            }
+            queue = nextQueue;
+        }
+
+        progressEl.innerHTML = `<span style="color:#10b981;font-weight:bold;">✅ 扫描完成！伞下共 ${visited.size - 1} 人，其中 ${resultRows.length} 人购买了矿机。</span>`;
+        log(`✅ 矿机伞下扫描完成，共发现 ${resultRows.length} 个购买者`);
+
+    } catch(e) {
+        progressEl.innerHTML = `<span style="color:#ef4444;">❌ 扫描失败: ${e.message}</span>`;
+    } finally {
+        btn.disabled = false;
+        btn.innerText = '🔍 开始扫描伞下矿机购买情况';
+    }
+}
+
+async function scanAllUsers() {
+    const btn = document.getElementById('scanUsersBtn');
+    const progressEl = document.getElementById('scanProgress');
+    const resultEl = document.getElementById('scanResult');
+    
+    btn.disabled = true;
+    resultEl.innerHTML = '';
+    
+    try {
+        const latestBlock = await provider.getBlockNumber();
+        let startBlock = parseInt(document.getElementById('scanStartBlock').value);
+        if(isNaN(startBlock) || startBlock < 0) {
+            startBlock = latestBlock - 10000;
+            if(startBlock < 0) startBlock = 0;
+        }
+
+        const userSet = new Set();
+        const step = 4900; 
+        progressEl.innerText = `正在扫描区块 ${startBlock} 到 ${latestBlock} ...`;
+        const filter = C.mining.filters.MachinePurchased();
+        
+        for(let from = startBlock; from <= latestBlock; from += step) {
+            let to = from + step - 1;
+            if(to > latestBlock) to = latestBlock;
+            progressEl.innerText = `正在扫描区块：${from} - ${to} ...`;
+            const events = await C.mining.queryFilter(filter, from, to);
+            for(let ev of events) {
+                userSet.add(ev.args.user); 
+            }
+        }
+        
+        progressEl.innerText = `扫描完成！共发现 ${userSet.size} 个不同的购买地址。`;
+        if(userSet.size === 0) {
+            resultEl.innerHTML = '未发现任何购买记录';
+        } else {
+            let html = '';
+            let count = 1;
+            for(let u of userSet) {
+                html += `<div style="padding:4px 0;border-bottom:1px solid #2a3a5a;display:flex;justify-content:space-between;">
+                    <span>${count++}. ${u}</span>
+                    <a href="javascript:void(0)" onclick="copyToClipboard('${u}')" style="color:#3b82f6;text-decoration:none;cursor:pointer;">复制</a>
+                </div>`;
+            }
+            resultEl.innerHTML = html;
+        }
+    } catch(e) {
+        progressEl.innerText = '扫描失败: ' + e.message;
+        log('扫描事件失败: ' + e.message, true);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+window.copyToClipboard = function(text) {
+    navigator.clipboard.writeText(text).then(()=>{
+        alert('✅ 地址已复制: ' + text);
+    });
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RAYC 霓虹消消乐</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<style>
+    :root {
+        --bg: #0f0b1a;
+        --panel: rgba(12, 22, 48, 0.7);
+        --border: rgba(79, 172, 254, 0.25);
+        --primary: #39ff14;
+        --accent: #ec4899;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
+    body {
+        background-color: var(--bg);
+        display: flex; justify-content: center; align-items: center;
+        height: 100vh; overflow: hidden;
+        font-family: system-ui, -apple-system, sans-serif;
+        color: #fff;
+        background: radial-gradient(circle at 20% 30%, #0a0f2a, #030617);
+    }
+    
+    #game-container {
+        position: relative; width: 100%; max-width: 450px; padding: 20px;
+        display: flex; flex-direction: column; align-items: center;
+    }
+
+    /* 返回按钮 */
+    .back-btn {
+        position: absolute; top: 10px; left: 10px; z-index: 100;
+        background: rgba(236, 72, 153, 0.15); border: 1px solid var(--accent);
+        color: #fbcfe8; padding: 8px 16px; border-radius: 30px;
+        text-decoration: none; font-size: 14px; font-weight: bold;
+        backdrop-filter: blur(10px); transition: all 0.3s ease;
+    }
+    .back-btn:hover { background: var(--accent); color: #fff; }
+
+    /* 顶部信息栏 */
+    .header {
+        width: 100%; display: flex; justify-content: space-between; align-items: center;
+        margin-top: 40px; margin-bottom: 20px;
+        background: var(--panel); border: 1px solid var(--border);
+        border-radius: 16px; padding: 15px 20px;
+    }
+    .score-box { text-align: left; }
+    .score-box .label { font-size: 12px; color: #94a3b8; }
+    .score-box .val { font-size: 24px; font-weight: bold; color: var(--primary); text-shadow: 0 0 10px rgba(57, 255, 20, 0.5); }
+    .moves-box { text-align: right; }
+    .moves-box .label { font-size: 12px; color: #94a3b8; }
+    .moves-box .val { font-size: 24px; font-weight: bold; color: var(--accent); text-shadow: 0 0 10px rgba(236, 72, 153, 0.5); }
+
+    /* 游戏棋盘 */
+    #board {
+        width: 100%; aspect-ratio: 1 / 1;
+        background: rgba(0, 0, 0, 0.4);
+        border: 2px solid var(--border);
+        border-radius: 20px;
+        display: grid;
+        grid-template-columns: repeat(8, 1fr);
+        grid-template-rows: repeat(8, 1fr);
+        gap: 4px; padding: 8px;
+        box-shadow: 0 0 30px rgba(79, 172, 254, 0.1);
+    }
+
+    /* 方块样式 */
+    .tile {
+        border-radius: 10px;
+        display: flex; justify-content: center; align-items: center;
+        font-size: clamp(20px, 6vw, 32px);
+        cursor: pointer;
+        transition: transform 0.15s, opacity 0.15s, box-shadow 0.15s;
+        background: rgba(255, 255, 255, 0.05);
+        border: 1px solid rgba(255,255,255,0.1);
+    }
+    
+    .tile.selected {
+        transform: scale(1.15);
+        box-shadow: 0 0 15px #fff;
+        border-color: #fff;
+        z-index: 10;
+    }
+    
+    .tile.clear {
+        transform: scale(0);
+        opacity: 0;
+    }
+
+    /* 覆盖层 (开始/结束) */
+    .overlay {
+        position: absolute; inset: 0; background: rgba(15, 11, 26, 0.95);
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        z-index: 10; border-radius: 20px; text-align: center; padding: 20px;
+    }
+    .overlay h1 { color: var(--primary); font-size: 26px; margin-bottom: 10px; text-shadow: 0 0 15px var(--primary); }
+    .overlay p { color: #88ffcc; font-size: 14px; margin-bottom: 25px; line-height: 1.6; }
+    
+    .btn {
+        background: transparent; border: 2px solid var(--primary); color: var(--primary);
+        padding: 12px 30px; font-size: 16px; font-weight: bold; font-family: inherit;
+        cursor: pointer; transition: all 0.2s; border-radius: 30px;
+    }
+    .btn:hover { background: var(--primary); color: #000; box-shadow: 0 0 20px var(--primary); }
+    .btn:disabled { border-color: #555; color: #555; cursor: not-allowed; box-shadow: none; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+    <a href="index-6.html" class="back-btn">← 返回</a>
+
+    <div class="header">
+        <div class="score-box">
+            <div class="label">SCORE</div>
+            <div class="val" id="score">0</div>
+        </div>
+        <div class="moves-box">
+            <div class="label">MOVES</div>
+            <div class="val" id="moves">30</div>
+        </div>
+    </div>
+
+    <div id="board"></div>
+
+    <!-- 开始遮罩 -->
+    <div id="start-screen" class="overlay">
+        <h1>💎 霓虹消消乐</h1>
+        <p>消耗 <span id="cost-text">50</span> RAYT 参与游戏<br>交换相邻宝石，达成3个以上连线消除！</p>
+        <button id="start-btn" class="btn" onclick="startGameAndPay()">连接钱包并开始</button>
+        <div id="wallet-info" style="margin-top:15px; font-size:12px; color:#666;">请连接 Web3 钱包 (BSC主网)</div>
+    </div>
+
+    <!-- 结束遮罩 -->
+    <div id="game-over-screen" class="overlay" style="display: none;">
+        <h1 style="color: var(--accent); text-shadow: 0 0 15px var(--accent);">游戏结束</h1>
+        <p>最终得分: <span id="final-score" style="color: #fff; font-size: 24px; font-weight: bold;">0</span></p>
+        <button class="btn" style="border-color: var(--accent); color: var(--accent);" onclick="replay()">再来一局</button>
+    </div>
+</div>
+
+<script>
+// ==================== Web3 配置区 ====================
+const TOKEN_ADDRESS = "0x88201e877C4FC38D2C1c3AF20A32234629f02405"; // RAYT代币
+const COST_AMOUNT = "10"; // 每次扣 50 枚
+const GAME_RECEIVER = "0xCF9F6eeC68959699f694668A57a5560Ea6c9ac2a"; // 收币地址
+// ===================================================
+
+document.getElementById('cost-text').innerText = COST_AMOUNT;
+
+const TOKEN_ABI = ["function transfer(address to, uint256 amount) returns (bool)", "function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
+let provider, signer, userAddress, tokenContract, isPaying = false;
+
+async function initWallet() {
+    if (window.ethereum) {
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            if (accounts.length > 0) setupProvider(accounts[0]);
+        } catch(e) {}
+    }
+}
+
+function setupProvider(addr) {
+    provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+    signer = provider.getSigner();
+    userAddress = addr;
+    tokenContract = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer);
+    document.getElementById('wallet-info').innerText = "已连接: " + addr.slice(0,6) + "..." + addr.slice(-4);
+    document.getElementById('start-btn').innerText = "支付并开始游戏";
+}
+
+async function startGameAndPay() {
+    if (isPaying) return;
+    if (!window.ethereum) return alert("请安装钱包插件！");
+    
+    if (!userAddress) {
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            setupProvider(accounts[0]);
+        } catch (err) { return alert("请先连接钱包"); }
+    }
+
+    const btn = document.getElementById('start-btn');
+    btn.disabled = true; isPaying = true;
+    btn.innerText = "正在请求交易...";
+
+    try {
+        const net = await provider.getNetwork();
+        if (net.chainId !== 56) {
+            try { await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] }); } 
+            catch(e) { alert("请切换到 BSC 主网"); btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏"; return; }
+        }
+
+        const decimals = await tokenContract.decimals();
+        const amountWei = ethers.utils.parseUnits(COST_AMOUNT, decimals);
+        const balance = await tokenContract.balanceOf(userAddress);
+        
+        if (balance.lt(amountWei)) {
+            alert("您的 RAYT 余额不足！");
+            btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏"; return;
+        }
+
+        btn.innerText = "等待链上确认...";
+        const tx = await tokenContract.transfer(GAME_RECEIVER, amountWei);
+        await tx.wait();
+
+        btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏";
+        startGame();
+
+    } catch (e) {
+        console.error(e);
+        alert("交易失败或取消: " + (e.reason || e.message));
+        btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏";
+    }
+}
+
+// ==================== 消消乐游戏逻辑 ====================
+const ROWS = 8;
+const COLS = 8;
+const TYPES = ['💎', '🔮', '⚡', '🔥', '💧', '🌿']; // 6种宝石
+const COLORS = ['#00ffff', '#bd00ff', '#f59e0b', '#ef4444', '#3b82f6', '#10b981']; // 对应的霓虹背景色
+
+const boardEl = document.getElementById('board');
+const scoreEl = document.getElementById('score');
+const movesEl = document.getElementById('moves');
+
+let grid = [];
+let score = 0;
+let moves = 30;
+let selectedTile = null;
+let isProcessing = false;
+
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('game-over-screen').style.display = 'none';
+    initBoard();
+}
+
+function replay() {
+    document.getElementById('game-over-screen').style.display = 'none';
+    document.getElementById('start-screen').style.display = 'flex';
+    document.getElementById('start-btn').innerText = "支付并重新开始";
+}
+
+// 初始化棋盘
+function initBoard() {
+    score = 0;
+    moves = 30;
+    selectedTile = null;
+    isProcessing = false;
+    updateUI();
+    boardEl.innerHTML = '';
+
+    // 生成初始不包含三消的网格
+    do {
+        grid = [];
+        for (let r = 0; r < ROWS; r++) {
+            let row = [];
+            for (let c = 0; c < COLS; c++) {
+                row.push(Math.floor(Math.random() * TYPES.length));
+            }
+            grid.push(row);
+        }
+        // 清除初始的三连
+        while (findMatches().length > 0) {
+            for (let r = 0; r < ROWS; r++) {
+                for (let c = 0; c < COLS; c++) {
+                    if (Math.random() < 0.2) grid[r][c] = Math.floor(Math.random() * TYPES.length);
+                }
+            }
+        }
+    } while (findMatches().length > 0);
+
+    renderBoard();
+}
+
+// 渲染 DOM
+function renderBoard() {
+    boardEl.innerHTML = '';
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+            const tile = document.createElement('div');
+            tile.className = 'tile';
+            tile.dataset.r = r;
+            tile.dataset.c = c;
+            
+            const type = grid[r][c];
+            tile.innerText = TYPES[type];
+            tile.style.boxShadow = `inset 0 0 10px ${COLORS[type]}`;
+            tile.style.backgroundColor = `${COLORS[type]}22`;
+
+            tile.addEventListener('click', () => handleTileClick(tile));
+            boardEl.appendChild(tile);
+        }
+    }
+}
+
+function updateUI() {
+    scoreEl.innerText = score;
+    movesEl.innerText = moves;
+}
+
+// 处理点击
+function handleTileClick(tile) {
+    if (isProcessing || moves <= 0) return;
+
+    const r = parseInt(tile.dataset.r);
+    const c = parseInt(tile.dataset.c);
+
+    if (!selectedTile) {
+        // 选中
+        selectedTile = { r, c, el: tile };
+        tile.classList.add('selected');
+    } else {
+        // 取消选中或尝试交换
+        const pr = selectedTile.r;
+        const pc = selectedTile.c;
+        
+        selectedTile.el.classList.remove('selected');
+
+        // 如果点的是自己
+        if (pr === r && pc === c) {
+            selectedTile = null;
+            return;
+        }
+
+        // 检查是否相邻
+        const isAdjacent = (Math.abs(pr - r) + Math.abs(pc - c)) === 1;
+        if (isAdjacent) {
+            trySwap(pr, pc, r, c);
+            selectedTile = null;
+        } else {
+            // 点击了不相邻的，重新选中
+            selectedTile = { r, c, el: tile };
+            tile.classList.add('selected');
+        }
+    }
+}
+
+// 交换逻辑
+async function trySwap(r1, c1, r2, c2) {
+    isProcessing = true;
+    swapData(r1, c1, r2, c2);
+    renderBoard();
+
+    await new Promise(r => setTimeout(r, 300));
+    const matches = findMatches();
+
+    if (matches.length > 0) {
+        moves--;
+        updateUI();
+        await processMatches(matches);
+    } else {
+        // 没有消除，换回来
+        swapData(r1, c1, r2, c2);
+        renderBoard();
+        isProcessing = false;
+    }
+}
+
+function swapData(r1, c1, r2, c2) {
+    let temp = grid[r1][c1];
+    grid[r1][c1] = grid[r2][c2];
+    grid[r2][c2] = temp;
+}
+
+// 寻找三连
+function findMatches() {
+    let matches = new Set();
+    
+    // 横向
+    for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS - 2; c++) {
+            if (grid[r][c] === grid[r][c+1] && grid[r][c] === grid[r][c+2]) {
+                matches.add(`${r},${c}`);
+                matches.add(`${r},${c+1}`);
+                matches.add(`${r},${c+2}`);
+            }
+        }
+    }
+    
+    // 纵向
+    for (let c = 0; c < COLS; c++) {
+        for (let r = 0; r < ROWS - 2; r++) {
+            if (grid[r][c] === grid[r+1][c] && grid[r][c] === grid[r+2][c]) {
+                matches.add(`${r},${c}`);
+                matches.add(`${r+1},${c}`);
+                matches.add(`${r+2},${c}`);
+            }
+        }
+    }
+    return Array.from(matches);
+}
+
+// 处理消除、下落、连击
+async function processMatches(matches) {
+    // 1. 播放消除动画
+    matches.forEach(m => {
+        const [r, c] = m.split(',').map(Number);
+        const tile = document.querySelector(`.tile[data-r="${r}"][data-c="${c}"]`);
+        if (tile) tile.classList.add('clear');
+    });
+    
+    score += matches.length * 10 * (matches.length > 3 ? 2 : 1); // 连消多得分
+    updateUI();
+
+    await new Promise(r => setTimeout(r, 300));
+
+    // 2. 将匹配的格子标为 -1
+    matches.forEach(m => {
+        const [r, c] = m.split(',').map(Number);
+        grid[r][c] = -1;
+    });
+
+    // 3. 下落逻辑
+    dropTiles();
+    renderBoard();
+    await new Promise(r => setTimeout(r, 300));
+
+    // 4. 递归检查是否有新的自然连击
+    const newMatches = findMatches();
+    if (newMatches.length > 0) {
+        await processMatches(newMatches);
+    } else {
+        isProcessing = false;
+        if (moves <= 0) gameOver();
+    }
+}
+
+// 砖块下落
+function dropTiles() {
+    for (let c = 0; c < COLS; c++) {
+        let emptySpaces = 0;
+        for (let r = ROWS - 1; r >= 0; r--) {
+            if (grid[r][c] === -1) {
+                emptySpaces++;
+            } else if (emptySpaces > 0) {
+                grid[r + emptySpaces][c] = grid[r][c];
+                grid[r][c] = -1;
+            }
+        }
+        // 顶部补充新宝石
+        for (let r = emptySpaces - 1; r >= 0; r--) {
+            grid[r][c] = Math.floor(Math.random() * TYPES.length);
+        }
+    }
+}
+
+function gameOver() {
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('game-over-screen').style.display = 'flex';
+}
+
+window.onload = () => { initWallet(); };
+</script>
+</body>
+</html>

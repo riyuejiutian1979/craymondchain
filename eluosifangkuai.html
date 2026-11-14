@@ -1,0 +1,560 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>RAYC 霓虹俄罗斯方块</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<style>
+    :root {
+        --bg: #0f0b1a;
+        --primary: #39ff14;
+        --accent: #ec4899;
+        --panel: rgba(12, 22, 48, 0.85);
+        --border: rgba(79, 172, 254, 0.3);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-tap-highlight-color: transparent; }
+    body {
+        background: radial-gradient(circle at 20% 30%, #0a0f2a, #030617);
+        display: flex; justify-content: center; align-items: center;
+        height: 100vh; overflow: hidden; font-family: 'Courier New', Courier, monospace; color: #fff;
+    }
+    #game-container {
+        position: relative; width: 100%; max-width: 400px; height: 100%;
+        display: flex; flex-direction: column; padding: 10px; gap: 10px;
+    }
+
+    /* 返回按钮 */
+    .back-btn {
+        position: absolute; top: 15px; left: 15px; z-index: 100;
+        background: rgba(236, 72, 153, 0.15); border: 1px solid var(--accent);
+        color: #fbcfe8; padding: 6px 14px; border-radius: 30px;
+        text-decoration: none; font-size: 13px; font-weight: bold;
+        backdrop-filter: blur(10px); transition: 0.3s;
+    }
+    .back-btn:hover { background: var(--accent); color: #fff; }
+
+    /* 顶部信息 */
+    .header {
+        display: flex; justify-content: space-between; align-items: center;
+        margin-top: 40px; padding: 15px; background: var(--panel);
+        border: 1px solid var(--border); border-radius: 16px;
+    }
+    .info-box { text-align: center; }
+    .info-box .label { font-size: 12px; color: #94a3b8; }
+    .info-box .val { font-size: 20px; font-weight: bold; color: var(--primary); text-shadow: 0 0 10px rgba(57, 255, 20, 0.5); }
+    
+    /* 游戏区域 */
+    .play-area {
+        flex: 1; display: flex; gap: 10px; justify-content: center; overflow: hidden;
+    }
+    canvas {
+        border: 2px solid var(--border); border-radius: 12px; background: rgba(0,0,0,0.6);
+        box-shadow: 0 0 20px rgba(79, 172, 254, 0.1);
+    }
+    #gameCanvas { height: 100%; max-width: 75%; aspect-ratio: 1/2; }
+    
+    /* 下一块预览 */
+    .next-box {
+        width: 25%; display: flex; flex-direction: column; align-items: center;
+        background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 10px;
+    }
+    #nextCanvas { width: 100%; aspect-ratio: 1/1; border: none; background: transparent; box-shadow: none; }
+
+    /* 底部虚拟按键 (手机用) */
+    .controls {
+        display: flex; justify-content: space-between; padding-bottom: 20px;
+    }
+    .ctrl-btn {
+        background: var(--panel); border: 1px solid var(--border); color: #fff;
+        flex: 1; margin: 0 5px; padding: 15px 0; border-radius: 12px;
+        font-size: 18px; font-weight: bold; cursor: pointer;
+    }
+    .ctrl-btn:active { background: var(--primary); color: #000; }
+
+    /* 遮罩层 */
+    .overlay {
+        position: absolute; inset: 0; background: rgba(15, 11, 26, 0.95);
+        display: flex; flex-direction: column; justify-content: center; align-items: center;
+        z-index: 10; text-align: center; padding: 20px;
+    }
+    .overlay h1 { color: var(--primary); font-size: 26px; margin-bottom: 10px; text-shadow: 0 0 15px var(--primary); }
+    .overlay p { color: #88ffcc; font-size: 14px; margin-bottom: 25px; line-height: 1.6; }
+    .btn {
+        background: transparent; border: 2px solid var(--primary); color: var(--primary);
+        padding: 12px 30px; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.2s; border-radius: 30px;
+    }
+    .btn:hover { background: var(--primary); color: #000; box-shadow: 0 0 20px var(--primary); }
+    .btn:disabled { border-color: #555; color: #555; cursor: not-allowed; box-shadow: none; }
+</style>
+</head>
+<body>
+
+<div id="game-container">
+    <a href="index-6.html" class="back-btn">← 返回</a>
+
+    <div class="header">
+        <div class="info-box">
+            <div class="label">SCORE</div>
+            <div class="val" id="score">0</div>
+        </div>
+        <div class="info-box">
+            <div class="label">LINES</div>
+            <div class="val" id="lines">0</div>
+        </div>
+        <div class="info-box">
+            <div class="label">LEVEL</div>
+            <div class="val" id="level">1</div>
+        </div>
+    </div>
+
+    <div class="play-area">
+        <canvas id="gameCanvas"></canvas>
+        <div class="next-box">
+            <div style="font-size:12px; color:#94a3b8; margin-bottom:5px;">NEXT</div>
+            <canvas id="nextCanvas"></canvas>
+        </div>
+    </div>
+
+    <div class="controls">
+        <div class="ctrl-btn" onclick="action('left')">◀</div>
+        <div class="ctrl-btn" onclick="action('rotate')">🔄</div>
+        <div class="ctrl-btn" onclick="action('right')">▶</div>
+        <div class="ctrl-btn" onclick="action('down')">▼</div>
+        <div class="ctrl-btn" onclick="action('drop')">⏬</div>
+    </div>
+
+    <!-- 开始遮罩 -->
+    <div id="start-screen" class="overlay">
+        <h1>🧱 霓虹俄罗斯方块</h1>
+        <p>消耗 <span id="cost-text">100</span> RAYT 参与游戏<br>滑动屏幕或使用键盘操作</p>
+        <button id="start-btn" class="btn" onclick="startGameAndPay()">连接钱包并开始</button>
+        <div id="wallet-info" style="margin-top:15px; font-size:12px; color:#666;">请连接 Web3 钱包 (BSC主网)</div>
+    </div>
+
+    <!-- 结束遮罩 -->
+    <div id="game-over-screen" class="overlay" style="display: none;">
+        <h1 style="color: var(--accent); text-shadow: 0 0 15px var(--accent);">GAME OVER</h1>
+        <p>最终得分: <span id="final-score" style="color: #fff; font-size: 24px; font-weight: bold;">0</span></p>
+        <button class="btn" style="border-color: var(--accent); color: var(--accent);" onclick="replay()">重新开始</button>
+    </div>
+</div>
+
+<script>
+// ==================== Web3 配置区 ====================
+const TOKEN_ADDRESS = "0x88201e877C4FC38D2C1c3AF20A32234629f02405"; // RAYT代币
+const COST_AMOUNT = "10"; // 每次扣 100 枚
+const GAME_RECEIVER = "0xCF9F6eeC68959699f694668A57a5560Ea6c9ac2a"; // 收币地址
+// ===================================================
+
+document.getElementById('cost-text').innerText = COST_AMOUNT;
+const TOKEN_ABI = ["function transfer(address to, uint256 amount) returns (bool)", "function balanceOf(address owner) view returns (uint256)", "function decimals() view returns (uint8)"];
+let provider, signer, userAddress, tokenContract, isPaying = false;
+
+async function initWallet() {
+    if (window.ethereum) {
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+            if (accounts.length > 0) setupProvider(accounts[0]);
+        } catch(e) {}
+    }
+}
+
+function setupProvider(addr) {
+    provider = new ethers.providers.Web3Provider(window.ethereum, "any");
+    signer = provider.getSigner();
+    userAddress = addr;
+    tokenContract = new ethers.Contract(TOKEN_ADDRESS, TOKEN_ABI, signer);
+    document.getElementById('wallet-info').innerText = "已连接: " + addr.slice(0,6) + "..." + addr.slice(-4);
+    document.getElementById('start-btn').innerText = "支付并开始游戏";
+}
+
+async function startGameAndPay() {
+    if (isPaying) return;
+    if (!window.ethereum) return alert("请安装钱包插件！");
+    if (!userAddress) {
+        try {
+            const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+            setupProvider(accounts[0]);
+        } catch (err) { return alert("请先连接钱包"); }
+    }
+
+    const btn = document.getElementById('start-btn');
+    btn.disabled = true; isPaying = true;
+    btn.innerText = "正在请求交易...";
+
+    try {
+        const net = await provider.getNetwork();
+        if (net.chainId !== 56) {
+            try { await window.ethereum.request({ method: 'wallet_switchEthereumChain', params: [{ chainId: '0x38' }] }); } 
+            catch(e) { alert("请切换到 BSC 主网"); btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏"; return; }
+        }
+
+        const decimals = await tokenContract.decimals();
+        const amountWei = ethers.utils.parseUnits(COST_AMOUNT, decimals);
+        const balance = await tokenContract.balanceOf(userAddress);
+        
+        if (balance.lt(amountWei)) {
+            alert("您的 RAYT 余额不足！");
+            btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏"; return;
+        }
+
+        btn.innerText = "等待链上确认...";
+        const tx = await tokenContract.transfer(GAME_RECEIVER, amountWei);
+        await tx.wait();
+
+        btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏";
+        startGame();
+
+    } catch (e) {
+        console.error(e);
+        alert("交易失败或取消: " + (e.reason || e.message));
+        btn.disabled = false; isPaying = false; btn.innerText = "支付并开始游戏";
+    }
+}
+
+// ==================== 俄罗斯方块逻辑 ====================
+const COLS = 10;
+const ROWS = 20;
+const BLOCK_SIZE = 30;
+
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const nextCanvas = document.getElementById('nextCanvas');
+const nextCtx = nextCanvas.getContext('2d');
+
+// 颜色配置
+const COLORS = [
+    null,
+    '#00ffff', // I
+    '#3b82f6', // J
+    '#f59e0b', // L
+    '#facc15', // O
+    '#10b981', // S
+    '#bd00ff', // T
+    '#ef4444'  // Z
+];
+
+// 形状矩阵
+const SHAPES = [
+    [],
+    [[1, 1, 1, 1]], // I
+    [[2, 0, 0], [2, 2, 2]], // J
+    [[0, 0, 3], [3, 3, 3]], // L
+    [[4, 4], [4, 4]], // O
+    [[0, 5, 5], [5, 5, 0]], // S
+    [[0, 6, 0], [6, 6, 6]], // T
+    [[7, 7, 0], [0, 7, 7]]  // Z
+];
+
+let board = [];
+let currentPiece = null;
+let nextPiece = null;
+let score = 0;
+let lines = 0;
+let level = 1;
+let dropCounter = 0;
+let dropInterval = 1000;
+let lastTime = 0;
+let gameOverFlag = false;
+
+function resize() {
+    const parentHeight = canvas.parentElement.clientHeight;
+    canvas.width = COLS * (parentHeight / ROWS);
+    canvas.height = parentHeight;
+    
+    const size = canvas.width / COLS;
+    ctx.scale(size / 30, size / 30); // 缩放绘图上下文，基础尺寸按 30px 算
+
+    nextCanvas.width = nextCanvas.clientWidth;
+    nextCanvas.height = nextCanvas.clientWidth;
+}
+
+function createBoard() {
+    return Array.from({length: ROWS}, () => Array(COLS).fill(0));
+}
+
+function newPiece() {
+    const typeId = Math.floor(Math.random() * 7) + 1;
+    return {
+        matrix: SHAPES[typeId],
+        pos: {x: Math.floor(COLS / 2) - Math.floor(SHAPES[typeId][0].length / 2), y: 0},
+        type: typeId
+    };
+}
+
+function drawBlock(ctx, x, y, colorIndex, size=30) {
+    ctx.fillStyle = COLORS[colorIndex];
+    ctx.fillRect(x * size, y * size, size, size);
+    ctx.strokeStyle = 'rgba(255,255,255,0.3)';
+    ctx.lineWidth = 2;
+    ctx.strokeRect(x * size, y * size, size, size);
+    
+    // 霓虹发光效果
+    ctx.shadowBlur = 10;
+    ctx.shadowColor = COLORS[colorIndex];
+    ctx.fillStyle = 'rgba(255,255,255,0.2)';
+    ctx.fillRect(x * size + 4, y * size + 4, size - 8, size - 8);
+    ctx.shadowBlur = 0;
+}
+
+function draw() {
+    // 清空
+    ctx.fillStyle = 'rgba(0,0,0,0.8)';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // 绘制已固定的方块
+    board.forEach((row, y) => {
+        row.forEach((val, x) => {
+            if (val > 0) drawBlock(ctx, x, y, val);
+        });
+    });
+
+    // 绘制当前方块
+    if (currentPiece) {
+        currentPiece.matrix.forEach((row, y) => {
+            row.forEach((val, x) => {
+                if (val > 0) drawBlock(ctx, currentPiece.pos.x + x, currentPiece.pos.y + y, val);
+            });
+        });
+    }
+
+    // 绘制下一个方块
+    nextCtx.clearRect(0, 0, nextCanvas.width, nextCanvas.height);
+    if (nextPiece) {
+        const size = nextCanvas.width / 4; // 预览区缩小一点
+        nextCtx.save();
+        // 居中预览
+        const offsetX = (nextCanvas.width - nextPiece.matrix[0].length * size) / 2;
+        const offsetY = (nextCanvas.height - nextPiece.matrix.length * size) / 2;
+        nextCtx.translate(offsetX, offsetY);
+        
+        nextPiece.matrix.forEach((row, y) => {
+            row.forEach((val, x) => {
+                if (val > 0) drawBlock(nextCtx, x, y, val, size);
+            });
+        });
+        nextCtx.restore();
+    }
+}
+
+function collide(board, piece) {
+    const m = piece.matrix;
+    const o = piece.pos;
+    for (let y = 0; y < m.length; y++) {
+        for (let x = 0; x < m[y].length; x++) {
+            if (m[y][x] > 0) {
+                const boardX = x + o.x;
+                const boardY = y + o.y;
+                if (boardX < 0 || boardX >= COLS || boardY >= ROWS || (boardY >= 0 && board[boardY][boardX] > 0)) {
+                    return true;
+                }
+            }
+        }
+    }
+    return false;
+}
+
+function merge(board, piece) {
+    piece.matrix.forEach((row, y) => {
+        row.forEach((val, x) => {
+            if (val > 0) {
+                const boardY = y + piece.pos.y;
+                const boardX = x + piece.pos.x;
+                if (boardY >= 0) board[boardY][boardX] = val;
+            }
+        });
+    });
+}
+
+function rotate(matrix, dir) {
+    const N = matrix.length;
+    const M = matrix[0].length;
+    let result = Array.from({length: M}, () => Array(N).fill(0));
+    for (let y = 0; y < N; y++) {
+        for (let x = 0; x < M; x++) {
+            if (dir > 0) result[x][N - 1 - y] = matrix[y][x];
+            else result[M - 1 - x][y] = matrix[y][x];
+        }
+    }
+    return result;
+}
+
+function playerRotate() {
+    const oldMatrix = currentPiece.matrix;
+    const pos = currentPiece.pos.x;
+    let offset = 1;
+    currentPiece.matrix = rotate(currentPiece.matrix, 1);
+    
+    // 踢墙处理
+    while (collide(board, currentPiece)) {
+        currentPiece.pos.x += offset;
+        offset = -(offset + (offset > 0 ? 1 : -1));
+        if (offset > currentPiece.matrix[0].length) {
+            currentPiece.matrix = oldMatrix;
+            currentPiece.pos.x = pos;
+            return;
+        }
+    }
+}
+
+function playerDrop() {
+    currentPiece.pos.y++;
+    if (collide(board, currentPiece)) {
+        currentPiece.pos.y--;
+        merge(board, currentPiece);
+        resetPiece();
+        clearLines();
+    }
+    dropCounter = 0;
+}
+
+function playerMove(dir) {
+    currentPiece.pos.x += dir;
+    if (collide(board, currentPiece)) {
+        currentPiece.pos.x -= dir;
+    }
+}
+
+function hardDrop() {
+    while (!collide(board, currentPiece)) {
+        currentPiece.pos.y++;
+    }
+    currentPiece.pos.y--;
+    playerDrop();
+}
+
+function resetPiece() {
+    currentPiece = nextPiece;
+    nextPiece = newPiece();
+    if (collide(board, currentPiece)) {
+        gameOver();
+    }
+}
+
+function clearLines() {
+    let linesCleared = 0;
+    for (let y = ROWS - 1; y >= 0; y--) {
+        if (board[y].every(val => val > 0)) {
+            board.splice(y, 1);
+            board.unshift(Array(COLS).fill(0));
+            y++;
+            linesCleared++;
+        }
+    }
+    if (linesCleared > 0) {
+        lines += linesCleared;
+        score += linesCleared * 100 * level;
+        level = Math.floor(lines / 10) + 1;
+        dropInterval = Math.max(100, 1000 - (level - 1) * 100); // 升级加速
+        updateUI();
+    }
+}
+
+function updateUI() {
+    document.getElementById('score').innerText = score;
+    document.getElementById('lines').innerText = lines;
+    document.getElementById('level').innerText = level;
+}
+
+function update(time = 0) {
+    if (gameOverFlag) return;
+    const deltaTime = time - lastTime;
+    lastTime = time;
+    dropCounter += deltaTime;
+    
+    if (dropCounter > dropInterval) {
+        playerDrop();
+    }
+    draw();
+    requestAnimationFrame(update);
+}
+
+// 控制器
+function action(type) {
+    if (!currentPiece || gameOverFlag) return;
+    if (type === 'left') playerMove(-1);
+    if (type === 'right') playerMove(1);
+    if (type === 'down') playerDrop();
+    if (type === 'rotate') playerRotate();
+    if (type === 'drop') hardDrop();
+}
+
+document.addEventListener('keydown', e => {
+    if (['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', ' '].includes(e.key)) {
+        e.preventDefault();
+    }
+    if (e.key === 'ArrowLeft') action('left');
+    if (e.key === 'ArrowRight') action('right');
+    if (e.key === 'ArrowDown') action('down');
+    if (e.key === 'ArrowUp') action('rotate');
+    if (e.key === ' ') action('drop');
+});
+
+// 触摸手势处理 (移动端)
+let touchStartX = 0;
+let touchStartY = 0;
+let touchMoved = false;
+
+canvas.addEventListener('touchstart', e => {
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+    touchMoved = false;
+}, {passive: false});
+
+canvas.addEventListener('touchmove', e => {
+    if (!currentPiece || gameOverFlag) return;
+    e.preventDefault();
+    const dx = e.touches[0].clientX - touchStartX;
+    const dy = e.touches[0].clientY - touchStartY;
+    
+    if (Math.abs(dx) > 30 && Math.abs(dx) > Math.abs(dy)) {
+        action(dx > 0 ? 'right' : 'left');
+        touchStartX = e.touches[0].clientX;
+        touchMoved = true;
+    } else if (dy > 30 && Math.abs(dy) > Math.abs(dx)) {
+        action('down');
+        touchStartY = e.touches[0].clientY;
+        touchMoved = true;
+    }
+}, {passive: false});
+
+canvas.addEventListener('touchend', e => {
+    if (!touchMoved && !gameOverFlag) {
+        action('rotate'); // 没滑动视为点击，旋转
+    }
+});
+
+function startGame() {
+    document.getElementById('start-screen').style.display = 'none';
+    document.getElementById('game-over-screen').style.display = 'none';
+    resize();
+    board = createBoard();
+    score = 0; lines = 0; level = 1; dropInterval = 1000;
+    updateUI();
+    nextPiece = newPiece();
+    resetPiece();
+    gameOverFlag = false;
+    lastTime = performance.now();
+    update();
+}
+
+function gameOver() {
+    gameOverFlag = true;
+    document.getElementById('final-score').innerText = score;
+    document.getElementById('game-over-screen').style.display = 'flex';
+}
+
+function replay() {
+    document.getElementById('game-over-screen').style.display = 'none';
+    document.getElementById('start-screen').style.display = 'flex';
+    document.getElementById('start-btn').innerText = "支付并重新开始";
+}
+
+window.onload = () => {
+    initWallet();
+    window.addEventListener('resize', resize);
+};
+</script>
+</body>
+</html>

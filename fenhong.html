@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>分红专属管理后台</title>
+<script src="https://cdn.jsdelivr.net/npm/ethers@5.7.2/dist/ethers.umd.min.js"></script>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:system-ui;background:#0a0f1e;color:#eef;padding:20px}
+.container{max-width:1400px;margin:0 auto}
+h1{margin-bottom:20px;border-left:4px solid #2a6df4;padding-left:16px}
+.card{background:#141b2b;border-radius:20px;padding:20px;margin-bottom:20px;border:1px solid #2a3a5a}
+.card h2{color:#7aa9ff;margin-bottom:14px;font-size:17px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(400px,1fr));gap:20px}
+input,select{background:#0f1622;border:1px solid #2a3a5a;color:#eef;padding:10px;border-radius:12px;width:100%;margin:6px 0;font-family:inherit}
+button{background:#2a6df4;border:none;color:#fff;padding:10px 20px;border-radius:30px;cursor:pointer;margin-top:8px;font-size:14px;width:100%;}
+button:hover{filter:brightness(1.1)}
+button.red{background:#8b3c3c}
+button.green{background:#10b981}
+button.orange{background:#f59e0b}
+button.small{padding:6px 14px;font-size:12px;margin-top:4px;width:auto;}
+.log{background:#0f1622;border-radius:14px;padding:10px;font-family:monospace;font-size:12px;max-height:250px;overflow-y:auto;margin-top:12px;border:1px solid #2a3a5a}
+.row{display:flex;justify-content:space-between;background:#0f1622;padding:10px 14px;border-radius:12px;margin:6px 0;font-size:13px}
+.badge{padding:2px 10px;border-radius:20px;font-size:12px}
+.badge.ok{background:#10b98130;color:#34d399}
+.badge.off{background:#6b728030;color:#9ca3af}
+.warning{color:#ffaa66;font-size:12px;margin-top:4px}
+.danger{color:#ef4444;font-size:12px;margin-top:4px}
+</style>
+</head>
+<body>
+<div class="container">
+  <h1>💰 分红专属管理后台</h1>
+
+  <div class="card">
+    <button id="connectBtn" style="max-width:300px;">连接 Owner 钱包</button>
+    <div id="walletStatus" style="margin-top:10px;font-family:monospace">未连接</div>
+    <div id="authStatus" style="margin-top:8px;color:#ef4444;font-weight:bold;"></div>
+    <div id="contractAddr" style="margin-top:8px;font-size:12px;color:#94a3b8;font-family:monospace;"></div>
+  </div>
+
+  <div id="adminPanel" style="display:none">
+    <div class="grid">
+      
+      <!-- 授权绑定模块 -->
+      <div class="card" style="grid-column: 1 / -1;">
+        <h2>🔗 授权绑定 (Node Contract)</h2>
+        <div class="warning">⚠️ 只有被绑定的节点合约，才有权限向此分红合约注册成员和权重！</div>
+        <div class="row"><span>当前绑定的节点合约地址</span><span id="currentNode" style="color:#10b981;font-weight:bold;">-</span></div>
+        <input type="text" id="newNodeAddr" placeholder="输入被授权的工作室合约地址 (如 0xff625a83...)">
+        <button class="orange" onclick="bindNode()" style="max-width:200px;">✅ 更新绑定授权</button>
+      </div>
+
+      <!-- 分红池 & 触发 -->
+      <div class="card">
+        <h2>💰 分红池 & 触发</h2>
+        <div class="row"><span>当前分红池</span><span id="poolBal">-</span></div>
+        <div class="row"><span>已分红总额</span><span id="totalDist">-</span></div>
+        <div class="row"><span>分红轮次</span><span id="distCount">-</span></div>
+        <div class="row"><span>上次分红</span><span id="lastDistTime">-</span></div>
+        <div class="row"><span>下次可触发</span><span id="nextDistTime">-</span></div>
+        <button class="green" onclick="manualDistribute()">💰 立即手动分红</button>
+        <button onclick="triggerDistribute()" style="margin-top:5px;">🎯 公开触发分红 (任何人可点)</button>
+        <button onclick="refreshAll()" style="margin-top:5px;">🔄 刷新数据</button>
+      </div>
+
+      <!-- 提取 USDT（新增） -->
+      <div class="card" style="border-color:#7a2b36;">
+        <h2 style="color:#ff9aa5">💸 提取合约 USDT</h2>
+        <div class="row"><span>当前合约 USDT 余额</span><span id="wdBal" style="color:#10b981;font-weight:bold;">-</span></div>
+        <div class="danger">⚠️ emergencyWithdraw 会直接掏空池子，用户未领取的分红将失效。请谨慎操作。</div>
+        <input type="text" id="wdTo" placeholder="接收地址 0x...">
+        <input type="number" id="wdAmt" placeholder="提取数量 (USDT)">
+        <div style="display:flex;gap:10px;margin-top:10px;">
+          <button class="orange" onclick="withdrawUSDT()" style="flex:1;">💸 提取指定金额</button>
+          <button class="red" onclick="withdrawAllUSDT()" style="flex:1;">🔥 全部提取</button>
+        </div>
+      </div>
+
+      <!-- 档位分配比例 -->
+      <div class="card">
+        <h2>📊 档位分配比例</h2>
+        <div class="warning">⚠️ 总和不能超过 10000（100%）</div>
+        <div class="row"><span>档位1（W1工作室）</span>
+          <input type="number" id="tier1Bps" placeholder="3000 = 30%" style="width:120px;margin:0">
+        </div>
+        <div class="row"><span>档位3（W2工作室）</span>
+          <input type="number" id="tier3Bps" placeholder="7000 = 70%" style="width:120px;margin:0">
+        </div>
+        <button class="green" onclick="setTierAlloc()">更新档位分配</button>
+        <div id="tierInfoDisplay" style="margin-top:12px;font-size:13px;line-height:1.8"></div>
+      </div>
+
+      <!-- 自动分红设置 -->
+      <div class="card">
+        <h2>⚙️ 自动分红设置</h2>
+        <div class="row"><span>当前状态</span><span id="autoStatus">-</span></div>
+        <div class="row"><span>当前间隔</span><span id="curInterval">-</span></div>
+        <div class="warning">间隔单位：秒（例如 86400 = 1天）</div>
+        <input type="number" id="newInterval" placeholder="输入间隔秒数">
+        <div style="display:flex;gap:10px;margin-top:10px;">
+          <button class="green" onclick="setAuto(true)">✅ 开启自动</button>
+          <button class="red" onclick="setAuto(false)">❌ 关闭自动</button>
+          <button onclick="setIntervalOnly()">📝 只更新间隔</button>
+        </div>
+      </div>
+
+      <!-- 黑名单 -->
+      <div class="card">
+        <h2>🚫 分红黑名单</h2>
+        <div class="warning">被禁止的地址不参与分红</div>
+        <input type="text" id="blockAddr" placeholder="用户地址 0x...">
+        <div style="display:flex;gap:10px;margin-top:10px;">
+          <button class="red" onclick="setBlock(true)">🚫 禁止分红</button>
+          <button class="green" onclick="setBlock(false)">✅ 解除禁止</button>
+        </div>
+      </div>
+
+      <!-- 地址查询 -->
+      <div class="card">
+        <h2>🔍 地址状态查询</h2>
+        <input type="text" id="queryAddr" placeholder="输入地址查询分红状态">
+        <button onclick="queryAddr()">🔍 查询</button>
+        <div id="queryResult" style="margin-top:10px;font-size:13px;line-height:1.8;background:#0f1622;padding:10px;border-radius:8px;"></div>
+      </div>
+
+    </div>
+  </div>
+  <div class="log" id="log">📋 操作日志</div>
+</div>
+
+<script>
+// ==================== 配置区 ====================
+// ⚡ 新部署的分红合约地址
+const DIVIDEND_ADDR = "0x06e57ef8f472736484b43a07393264d87114eb40";
+
+// ⚡ 部署钱包地址（改成新钱包了！）
+const SUPER_ADMIN = "0x1a01B7C72bc0C7021a54e9E4027994D8AB6f5998";
+
+const ABI = [
+    "function owner() view returns (address)",
+    "function nodeContract() view returns (address)", "function setNodeContract(address) external",
+    "function setTierAllocation(uint256,uint256) external", "function batchSetTierAllocation(uint256[],uint256[]) external",
+    "function getTierInfo(uint256) view returns (uint256,uint256,uint256)",
+    "function totalDistributed() view returns (uint256)", "function distributeCount() view returns (uint256)",
+    "function lastDistributeTime() view returns (uint256)",
+    "function autoDistributeEnabled() view returns (bool)", "function autoDistributeInterval() view returns (uint256)",
+    "function setAutoDistribute(bool,uint256) external",
+    "function distribute() external",
+    "function dividendBlocked(address) view returns (bool)", "function setDividendBlocked(address,bool) external",
+    "function userTierId(address) view returns (uint256)", "function userClaimed(address) view returns (uint256)",
+    "function pendingReward(address) view returns (uint256)",
+    "function getContractBalance() view returns (uint256)",
+    "function getDistributeStatus() view returns (bool,uint256,uint256,uint256,bool)",
+    // ⚡ 新增：提取 USDT
+    "function emergencyWithdraw(address,uint256) external"
+];
+
+let provider, signer, userAddress, dividend;
+const logEl = document.getElementById('log');
+function log(m,e=false){logEl.innerHTML+=`<div style="color:${e?'#ef4444':'#10b981'}">[${new Date().toLocaleTimeString()}] ${m}</div>`;logEl.scrollTop=logEl.scrollHeight;}
+function fmt(v,dec=18){try{return parseFloat(ethers.utils.formatUnits(v,dec)).toLocaleString(undefined,{maximumFractionDigits:4});}catch(e){return "0";}}
+
+document.getElementById('contractAddr').innerText = '分红合约地址: ' + DIVIDEND_ADDR;
+
+document.getElementById('connectBtn').onclick = async () => {
+    if(!window.ethereum) return alert('请安装 MetaMask');
+    await window.ethereum.request({method:'eth_requestAccounts'});
+    provider = new ethers.providers.Web3Provider(window.ethereum);
+    signer = provider.getSigner();
+    userAddress = await signer.getAddress();
+    
+    const net = await provider.getNetwork();
+    if(net.chainId !== 56){ alert('请切换到 BSC 主网'); return; }
+
+    // 权限校验
+    if(userAddress.toLowerCase() !== SUPER_ADMIN.toLowerCase()) {
+        document.getElementById('walletStatus').innerText = '当前连接: ' + userAddress;
+        document.getElementById('authStatus').innerText = '⛔ 拒绝访问：非超级管理员！';
+        document.getElementById('adminPanel').style.display = 'none';
+        return;
+    }
+
+    document.getElementById('walletStatus').innerText = '已连接: ' + userAddress;
+    document.getElementById('authStatus').innerText = '✅ 权限校验通过';
+    document.getElementById('authStatus').style.color = '#10b981';
+    document.getElementById('adminPanel').style.display = 'block';
+
+    dividend = new ethers.Contract(DIVIDEND_ADDR, ABI, signer);
+    
+    // 校验链上 owner
+    try {
+        const chainOwner = await dividend.owner();
+        if(chainOwner.toLowerCase() !== userAddress.toLowerCase()) {
+            log('⚠️ 链上 owner 与当前钱包不一致！写操作将失败。链上 owner: ' + chainOwner, true);
+        }
+    } catch(e){}
+
+    // 首次自动填提取地址
+    document.getElementById('wdTo').value = userAddress;
+    
+    log('钱包已连接');
+    refreshAll();
+};
+
+async function tx(promise, msg) { 
+    try { 
+        log('等待交易...'); 
+        const res = await promise; 
+        await res.wait(); 
+        log('✅ ' + msg); 
+        refreshAll(); 
+    } catch(e) { 
+        log('❌ 失败: ' + (e.reason || e.message), true); 
+    } 
+}
+
+async function refreshAll(){
+    try{
+        // 1. 读取绑定的节点地址
+        document.getElementById('currentNode').innerText = await dividend.nodeContract();
+
+        // 2. 资金池数据
+        const bal = await dividend.getContractBalance();
+        document.getElementById('poolBal').innerText = fmt(bal) + ' USDT';
+        document.getElementById('wdBal').innerText = fmt(bal) + ' USDT';
+        document.getElementById('totalDist').innerText = fmt(await dividend.totalDistributed()) + ' USDT';
+        document.getElementById('distCount').innerText = (await dividend.distributeCount()).toString();
+
+        // 3. 自动分红状态
+        const st = await dividend.getDistributeStatus();
+        document.getElementById('autoStatus').innerHTML = st[0] ? '<span class="badge ok">✅ 已开启</span>' : '<span class="badge off">❌ 已关闭</span>';
+        document.getElementById('curInterval').innerText = st[1].toString() + ' 秒 (' + (st[1]/86400).toFixed(2) + ' 天)';
+        document.getElementById('lastDistTime').innerText = st[2].toNumber() ? new Date(st[2].toNumber()*1000).toLocaleString() : '未分红';
+        document.getElementById('nextDistTime').innerText = st[0] ? (st[4] ? '✅ 可触发' : new Date(st[3].toNumber()*1000).toLocaleString()) : '未开启自动';
+
+        // 4. 档位比例
+        const t1 = await dividend.getTierInfo(1);
+        const t3 = await dividend.getTierInfo(3);
+        document.getElementById('tier1Bps').value = t1[0].toString();
+        document.getElementById('tier3Bps').value = t3[0].toString();
+        document.getElementById('tierInfoDisplay').innerHTML = `
+            <div>📌 <b>档位1（W1工作室）</b>：${(t1[0]/100).toFixed(2)}% | 成员 ${t1[1]} 人</div>
+            <div>📌 <b>档位3（W2工作室）</b>：${(t3[0]/100).toFixed(2)}% | 成员 ${t3[1]} 人</div>
+        `;
+    }catch(e){ console.error(e); log('刷新失败: ' + e.message, true); }
+}
+
+// 绑定节点合约
+async function bindNode() {
+    const addr = document.getElementById('newNodeAddr').value.trim();
+    if(!ethers.utils.isAddress(addr)) return alert('无效地址');
+    await tx(dividend.setNodeContract(addr), '节点合约绑定成功');
+}
+
+// 分红相关
+async function manualDistribute() {
+    if(!confirm('立即手动分红？')) return;
+    await tx(dividend.distribute(), '分红成功');
+}
+async function triggerDistribute() {
+    await tx(dividend.distribute(), '分红成功');
+}
+
+// 档位设置
+async function setTierAlloc() {
+    const b1 = parseInt(document.getElementById('tier1Bps').value);
+    const b3 = parseInt(document.getElementById('tier3Bps').value);
+    if(isNaN(b1) || isNaN(b3)) return alert('输入有效值');
+    if(b1 + b3 > 10000) return alert('总和不能超过 10000');
+    await tx(dividend.batchSetTierAllocation([1, 3], [b1, b3]), '档位分配已更新');
+}
+
+// 自动分红
+async function setAuto(enable) {
+    let v = parseInt(document.getElementById('newInterval').value);
+    if(!v) v = 86400; // 默认1天
+    if(v < 60) return alert('间隔至少60秒');
+    await tx(dividend.setAutoDistribute(enable, v), `自动分红已${enable?'开启':'关闭'}`);
+}
+async function setIntervalOnly() {
+    const v = parseInt(document.getElementById('newInterval').value);
+    if(!v || v < 60) return alert('间隔至少60秒');
+    const en = await dividend.autoDistributeEnabled();
+    await tx(dividend.setAutoDistribute(en, v), '间隔已更新');
+}
+
+// ==================== 提取 USDT（新增） ====================
+async function withdrawUSDT() {
+    const to = document.getElementById('wdTo').value.trim();
+    const amt = document.getElementById('wdAmt').value;
+    if(!ethers.utils.isAddress(to)) return alert('接收地址无效');
+    if(!amt || Number(amt) <= 0) return alert('数量无效');
+    const amountWei = ethers.utils.parseEther(amt);
+    const bal = await dividend.getContractBalance();
+    if(bal.lt(amountWei)) return alert(`合约余额不足（当前 ${fmt(bal)} USDT）`);
+    if(!confirm(`确认提取 ${amt} USDT 到：\n${to}\n\n⚠️ 用户未领取的分红将失效`)) return;
+    await tx(dividend.emergencyWithdraw(to, amountWei), `成功提取 ${amt} USDT`);
+    document.getElementById('wdAmt').value = '';
+}
+
+async function withdrawAllUSDT() {
+    const to = document.getElementById('wdTo').value.trim();
+    if(!ethers.utils.isAddress(to)) return alert('接收地址无效');
+    const bal = await dividend.getContractBalance();
+    if(bal.isZero()) return alert('合约内 USDT 余额为 0');
+    if(!confirm(`⚠️ 确认全部提取 ${fmt(bal)} USDT 到：\n${to}\n\n此操作会清空合约内所有用户待领分红！`)) return;
+    if(!confirm('再次确认：真的要全部提取吗？')) return;
+    await tx(dividend.emergencyWithdraw(to, bal), '全部提取成功');
+}
+
+// 黑名单
+async function setBlock(status) {
+    const addr = document.getElementById('blockAddr').value.trim();
+    if(!ethers.utils.isAddress(addr)) return alert('无效地址');
+    if(status && !confirm('禁止该地址分红？')) return;
+    await tx(dividend.setDividendBlocked(addr, status), `已${status?'禁止':'解除'}该地址分红`);
+}
+
+// 查询
+async function queryAddr() {
+    const addr = document.getElementById('queryAddr').value.trim();
+    if(!ethers.utils.isAddress(addr)) return alert('无效地址');
+    try{
+        const tid = await dividend.userTierId(addr);
+        const blocked = await dividend.dividendBlocked(addr);
+        const claimed = await dividend.userClaimed(addr);
+        const pending = await dividend.pendingReward(addr);
+        document.getElementById('queryResult').innerHTML = `
+            <div>分红档位ID：<b>${tid.toString()}</b>（0=未参与）</div>
+            <div>分红状态：${blocked ? '🚫 已禁止' : '✅ 正常'}</div>
+            <div>已领取分红：<b>${fmt(claimed)} USDT</b></div>
+            <div>待领取分红：<b>${fmt(pending)} USDT</b></div>
+        `;
+    }catch(e){ document.getElementById('queryResult').innerText = '查询失败: '+e.message; }
+}
+</script>
+</body>
+</html>
